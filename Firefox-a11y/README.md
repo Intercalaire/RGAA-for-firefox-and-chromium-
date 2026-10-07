@@ -20,6 +20,8 @@ const URLS = [
 ];
 ```
 
+Les deux kits (Chromium-a11y et Firefox-a11y) peuvent être inclus dans le même projet : leurs jobs portent des noms différents et tournent en parallèle.
+
 ### Pour faire ses tests en local
 ## Local UBUNTU cat /etc/os-release
 (information : je n'ai pu tester que sur Ubuntu 26.xxxx)

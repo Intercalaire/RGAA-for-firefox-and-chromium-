@@ -1,0 +1,25 @@
+{
+  "threshold": 0,
+  "concurrency": 2,
+  "defaults": {
+    "standard": "WCAG2AA",
+    "runners": ["axe", "htmlcs"],
+    "timeout": 30000,
+    "wait": 2000,
+    "levelCapWhenNeedsReview": "warning",
+    "chromeLaunchConfig": {
+      "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+    },
+    "ignore": [],
+    "reporters": [
+      "cli",
+      ["json", { "fileName": "./pa11y-report.json" }],
+      ["pa11y-ci-reporter-html", { "destination": "./pa11y-html", "includeZeroIssues": true }]
+    ]
+  },
+  "urls": [
+    {
+		"url": "http://localhost:3000/"
+	}
+	]
+}
