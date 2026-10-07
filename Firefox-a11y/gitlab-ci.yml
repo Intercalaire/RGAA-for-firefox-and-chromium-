@@ -1,0 +1,17 @@
+accessibilite_firefox:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.56.0-noble
+  script:
+    - npx --yes serve . -l 3000 &
+    - npx --yes wait-on http://localhost:3000 --timeout 60000
+    - cd Firefox-a11y
+    - npm ci
+    - npm run a11y
+  allow_failure: true
+  artifacts:
+    when: always
+    expose_as: "Rapport accessibilite"
+    paths:
+      - Firefox-a11y/a11y-report.json
+      - Firefox-a11y/rgaa-summary.json
+    expire_in: 30 days
