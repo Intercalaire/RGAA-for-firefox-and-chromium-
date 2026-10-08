@@ -4,7 +4,8 @@
 /**
  * a11y-firefox.js
  *
- * Teste l'accessibilite sous Firefox avec Playwright + axe-core.
+ * Teste l'accessibilite sous Firefox avec Playwright + axe-core, puis avec
+ * les tests bonus de tests-bonus.js (focus visible, liens vagues...).
  * Produit un rapport JSON au format pa11y, relu par rgaa-report.js.
  *
  * Prerequis (versions a aligner sur l'image Docker du job) :
@@ -20,13 +21,20 @@
 const fs = require('fs');
 const { firefox } = require('playwright');
 const AxeBuilder = require('@axe-core/playwright').default;
+const { executerTestsBonus } = require('./tests-bonus');
 
 /* ------------------------------------------------------------------ */
 /* Configuration                                                       */
 /* ------------------------------------------------------------------ */
 
+// Pages a tester. Le port doit correspondre a celui de "serve" (3000 par defaut).
 const URLS = [
-  'http://localhost:3000/'
+  'http://localhost:3000/',
+  'http://localhost:3000/contact.html',
+  'http://localhost:3000/mentions-legales.html',
+  'http://localhost:3000/accessibilite.html',
+  'http://localhost:3000/plan-du-site.html',
+  'http://localhost:3000/articles/exemple-article.html'
 ];
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
@@ -43,7 +51,7 @@ function lireArguments() {
     sortie: i !== -1 ? args[i + 1] : './a11y-report.json',
     capture: args.includes('--capture')
   };
-} 
+}
 
 /*
 	Convertit un resultat axe en anomalies au format pa11y. axe regroupe les occurrences sous une seule regle ; pa11y produit une entree par element. On deplie donc les noeuds.
@@ -83,8 +91,24 @@ async function analyser(page, url, capture) {
   }
 
   const resultats = await constructeur.analyze();
-  const erreurs = resultats.violations.flatMap((r) => versFormatPa11y(r, 'error'));
-  const avertissements = resultats.incomplete.flatMap((r) => versFormatPa11y(r, 'warning'));
+
+  // Tests bonus, apres axe car le parcours au clavier deplace le focus.
+  // Une panne de ces tests ne doit pas faire perdre les resultats d'axe.
+  let bonus = [];
+  try {
+    bonus = await executerTestsBonus(page);
+  } catch (erreur) {
+    console.error(`\n  Tests bonus impossibles sur ${url} : ${erreur.message}`);
+  }
+
+  const erreurs = [
+    ...resultats.violations.flatMap((r) => versFormatPa11y(r, 'error')),
+    ...bonus.filter((a) => a.type === 'error')
+  ];
+  const avertissements = [
+    ...resultats.incomplete.flatMap((r) => versFormatPa11y(r, 'warning')),
+    ...bonus.filter((a) => a.type !== 'error')
+  ];
 
   console.log(`${erreurs.length} erreur(s), ${avertissements.length} a verifier`);
   return { anomalies: [...erreurs, ...avertissements], erreurs: erreurs.length };

@@ -1,4 +1,4 @@
-### Installation simple pour les vérifs GitLab
+### Installation simple pour les vérifs grâce à GitLab
 
 1. Ajouter le dossier Chromium-a11y à votre projet.
 2. Ajouter dans le .gitlab-ci.yml à la racine du projet :
@@ -11,42 +11,68 @@
 Exemple :
 ```
   "urls": [
-    {
-		"url": "http://localhost:3000/"
-	},
-	{
-		"url": "http://localhost:3000/contact"
-	}
-	]
+    "http://localhost:3000/",
+    "http://localhost:3000/mentions-legales.html",
+    "http://localhost:3000/accessibilite.html",
+    "http://localhost:3000/plan-du-site.html"
+  ]
 ```
+
+Les URL peuvent aussi être celles d'un site en ligne (https://...). Attention aux pages de redirection : utiliser l'adresse finale de la page.
 
 Les deux kits (Chromium-a11y et Firefox-a11y) peuvent être inclus dans le même projet : leurs jobs portent des noms différents et tournent en parallèle.
 
 ### Lire les résultats
 
 - Chromium-a11y utilise deux moteurs, axe et htmlcs : une même anomalie peut donc apparaître deux fois.
+- Les tests bonus (fichier tests-bonus.js) sont ajoutés au même rapport, avec le moteur « bonus » et des codes commençant par `kit-`. Ils couvrent notamment le focus visible (10.7), le piège clavier (12.9), le lien d'évitement (12.7), l'affichage à 320 px (10.11), les images (1.2 à 1.9), les contrastes sur image et des composants (3.2, 3.3), les tableaux (5.x), la structure (8.1, 9.2, 9.3, 10.1) et les formulaires (11.5, 11.6, 11.10, 11.13).
+- Les erreurs sont à corriger. Les avertissements (« à vérifier ») sont des cas probables qu'une personne doit confirmer : CAPTCHA, PDF, graphique sans description, alternative trop longue...
+- pa11y n'affiche que les erreurs d'axe : les contrastes qu'axe ne sait pas mesurer (texte sur image ou dégradé) n'apparaissent pas. Le test bonus 3.2 les mesure directement sur l'écran.
+- htmlcs peut signaler des éléments invisibles (iframe de statistiques de 1 px, par exemple) ou des logos SVG pourtant nommés : en cas de doute, vérifier si axe signale aussi l'élément.
+- Le récapitulatif final classe toutes les anomalies par critère RGAA. Il ne remplace pas un audit : les outils automatiques ne couvrent qu'une partie des 106 critères.
 
-### POUR faire ses tests en local
+### Pour faire ses tests en local
 
-1. Installer pa11y-ci (une seule fois) :
+
+## AVEC MAKEFILE
+
+Toutes les commandes se lancent depuis le dossier Chromium-a11y. Taper `make` seul affiche l'aide.
+
+1. Installer pa11y-ci et son Chrome (une seule fois) :
 ```
-    npm install -g pa11y-ci pa11y-ci-reporter-html
+    make installer
 ```
-2. Installer le Chrome utilisé par pa11y (une seule fois) :
+Ne pas lancer `sudo make installer` : Chrome serait alors installé pour root et pa11y ne le trouverait pas. Si `npm install -g` manque de droits (erreur EACCES), `make installer` recommence tout seul avec sudo et demande le mot de passe ; le message d'erreur qui s'affiche au passage est donc normal.
+
+Le numéro de version de Chrome doit être celui qu'attend pa11y-ci. Après une mise à jour de pa11y-ci, le nouveau numéro est indiqué dans le message d'erreur « Could not find Chrome (ver. ...) » ; il suffit alors de lancer :
 ```
-    npx @puppeteer/browsers install chrome@154.0.8037.57 --path ~/.cache/puppeteer
+    make chrome CHROME_VERSION=x.y.z
 ```
-Le numéro de version doit être celui qu'attend pa11y-ci. Après une mise à jour de pa11y-ci, le nouveau numéro est indiqué dans le message d'erreur « Could not find Chrome (ver. ...) ».
+et de reporter ce numéro dans la ligne `CHROME_VERSION` du Makefile.
 
 Si Chrome refuse de démarrer avec l'erreur « error while loading shared libraries » :
 ```
     sudo npx @puppeteer/browsers install chrome@154.0.8037.57 --path ~/.cache/puppeteer --install-deps
 ```
-3. Dans un premier terminal, à la racine du projet :
+
+2. Lancer le test :
 ```
-    npx serve . -l 3000
+    make test
 ```
-4. Dans un second terminal, à la racine du projet :
+Le serveur local est démarré automatiquement à la racine du projet, puis arrêté à la fin. S'il tourne déjà sur le port 3000, il est réutilisé.
+
+pa11y-ci, puis les tests bonus, puis le récapitulatif RGAA s'enchaînent. Si des erreurs sont trouvées, make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, Chrome absent...) : lire le message au-dessus.
+
+Pour voir ce que mesure le test de contraste sur image (3.2), lancer :
 ```
-    cd Chromium-a11y && pa11y-ci --config pa11yci.json && node rgaa-report.js pa11y-report.json
+    KIT_CAPTURES=1 make test
+```
+Chaque zone mesurée est enregistrée dans un fichier capture-contraste-N.png, dont le nom apparaît dans le message.
+
+Autres commandes :
+```
+    make fichier     même chose, avec toute la sortie dans resultats.txt
+    make rapport     réaffiche le récapitulatif du dernier test
+    make clean       supprime les rapports générés
+    make fclean      supprime aussi le Chrome de pa11y (relancer make chrome ensuite)
 ```

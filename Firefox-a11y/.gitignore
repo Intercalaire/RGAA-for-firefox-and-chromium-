@@ -2,3 +2,5 @@ node_modules/
 a11y-report.json
 rgaa-summary.json
 capture-*.png
+resultats.txt
+serveur.log

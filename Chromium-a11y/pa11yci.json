@@ -18,8 +18,9 @@
     ]
   },
   "urls": [
-    {
-		"url": "http://localhost:3000/"
-	}
-	]
+    "http://localhost:3000/",
+    "http://localhost:3000/mentions-legales.html",
+    "http://localhost:3000/accessibilite.html",
+    "http://localhost:3000/plan-du-site.html"
+  ]
 }

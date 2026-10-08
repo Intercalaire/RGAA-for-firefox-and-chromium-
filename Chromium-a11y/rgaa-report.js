@@ -4,11 +4,11 @@
 /**
  * rgaa-report.js
  *
- * Relit un rapport JSON produit par pa11y-ci et regroupe les anomalies
+ * Relit un rapport JSON au format pa11y et regroupe les anomalies
  * par thematique et par critere du RGAA 4.1.
  *
  * Usage :
- *   node rgaa-report.js [chemin/vers/pa11y-report.json] [--json fichier.json] [--strict]
+ *   node rgaa-report.js [chemin/vers/a11y-report.json] [--json fichier.json] [--strict]
  *
  * Rappel important : il s'agit d'une TRADUCTION des regles WCAG remontees par
  * pa11y vers la nomenclature RGAA, pas d'un audit RGAA. Les outils automatiques
@@ -51,7 +51,7 @@ const AXE_VERS_RGAA = {
   'svg-img-alt': '1.1',
   'object-alt': '1.1',
   'image-redundant-alt': '1.2',
-  'server-side-image-map': '1.5',
+  'server-side-image-map': '7.3',
 
   // 2. Cadres
   'frame-title': '2.1',
@@ -60,13 +60,13 @@ const AXE_VERS_RGAA = {
 
   // 3. Couleurs
   'color-contrast': '3.2',
-  'color-contrast-enhanced': '3.3',
-  'link-in-text-block': '3.1',
+  'color-contrast-enhanced': '3.2',
+  'link-in-text-block': '10.6',
 
   // 4. Multimedia
-  'video-caption': '4.1',
+  'video-caption': '4.3',
   'audio-caption': '4.1',
-  'no-autoplay-audio': '4.19',
+  'no-autoplay-audio': '4.10',
 
   // 5. Tableaux
   'td-headers-attr': '5.7',
@@ -76,10 +76,10 @@ const AXE_VERS_RGAA = {
   'scope-attr-valid': '5.7',
   'empty-table-header': '5.6',
   'td-has-header': '5.7',
-  'layout-table': '5.3',
+  'layout-table': '5.8',
 
   // 6. Liens
-  'link-name': '6.1',
+  'link-name': '6.2',
   'identical-links-same-purpose': '6.1',
 
   // 7. Scripts
@@ -100,12 +100,13 @@ const AXE_VERS_RGAA = {
   'aria-tooltip-name': '7.1',
   'aria-valid-attr': '7.1',
   'aria-valid-attr-value': '7.1',
+  'aria-prohibited-attr': '7.1',
   'aria-dialog-name': '7.1',
   'aria-text': '7.1',
   'nested-interactive': '7.1',
   'scrollable-region-focusable': '7.3',
-  'blink': '7.4',
-  'marquee': '7.4',
+  'blink': '13.8',
+  'marquee': '13.8',
 
   // 8. Elements obligatoires
   'html-has-lang': '8.3',
@@ -138,8 +139,8 @@ const AXE_VERS_RGAA = {
   'label-title-only': '11.1',
   'form-field-multiple-labels': '11.1',
   'select-name': '11.1',
-  'input-button-name': '11.1',
-  'button-name': '11.1',
+  'input-button-name': '11.9',
+  'button-name': '11.9',
   'autocomplete-valid': '11.13',
   'aria-required-children-form': '11.1',
 
@@ -159,6 +160,41 @@ const AXE_VERS_RGAA = {
   'tabindex': '12.8',
   'accesskeys': '12.10',
 
+  // Tests bonus (tests-bonus.js)
+  'kit-focus-visible': '10.7',
+  'kit-lien-vague': '6.1',
+  'kit-alt-suspect': '1.3',
+  'kit-titres-sauts': '9.1',
+  'kit-piege-clavier': '12.9',
+  'kit-reflow-320': '10.11',
+  'kit-lien-evitement': '12.7',
+  'kit-clic-sans-clavier': '7.3',
+  'kit-image-decorative': '1.2',
+  'kit-svg-ambigu': '1.2',
+  'kit-alt-long': '1.3',
+  'kit-alt-redondant': '1.3',
+  'kit-alt-identique': '1.3',
+  'kit-captcha': '1.5',
+  'kit-description-absente': '1.6',
+  'kit-legende': '1.9',
+  'kit-contraste-image': '3.2',
+  'kit-contraste-composant': '3.3',
+  'kit-doctype': '8.1',
+  'kit-presentation-html': '10.1',
+  'kit-structure': '9.2',
+  'kit-fausse-liste': '9.3',
+  'kit-tableau-resume': '5.1',
+  'kit-tableau-titre': '5.4',
+  'kit-tableau-mise-en-forme': '5.8',
+  'kit-cadre-titre': '2.2',
+  'kit-sens-lecture': '8.10',
+  'kit-groupe-champs': '11.5',
+  'kit-groupe-legende': '11.6',
+  'kit-obligatoire': '11.10',
+  'kit-autocomplete': '11.13',
+  'kit-document': '13.3',
+  'kit-emoji': '13.5',
+
   // 13. Consultation
   'meta-refresh': '13.1',
   'meta-refresh-no-exceptions': '13.1'
@@ -173,17 +209,17 @@ const AXE_VERS_RGAA = {
 const WCAG_VERS_RGAA = {
   '1.1.1': '1.1',
   '1.2.1': '4.1',
-  '1.2.2': '4.1',
-  '1.2.3': '4.3',
-  '1.2.4': '4.1',
-  '1.2.5': '4.3',
+  '1.2.2': '4.3',
+  '1.2.3': '4.1',
+  '1.2.4': '4.3',
+  '1.2.5': '4.5',
   '1.3.1': '9.1',
-  '1.3.2': '9.3',
-  '1.3.3': '10.3',
+  '1.3.2': '10.3',
+  '1.3.3': '10.9',
   '1.3.4': '10.11',
   '1.3.5': '11.13',
   '1.4.1': '3.1',
-  '1.4.2': '4.19',
+  '1.4.2': '4.10',
   '1.4.3': '3.2',
   '1.4.4': '10.4',
   '1.4.5': '1.8',
@@ -192,7 +228,7 @@ const WCAG_VERS_RGAA = {
   '1.4.12': '10.12',
   '1.4.13': '10.13',
   '2.1.1': '7.3',
-  '2.1.2': '12.8',
+  '2.1.2': '12.9',
   '2.2.1': '13.1',
   '2.2.2': '13.8',
   '2.4.1': '12.7',
@@ -202,13 +238,13 @@ const WCAG_VERS_RGAA = {
   '2.4.5': '12.1',
   '2.4.6': '9.1',
   '2.4.7': '10.7',
-  '2.5.3': '11.13',
+  '2.5.3': '11.2',
   '3.1.1': '8.3',
-  '3.1.2': '8.4',
-  '3.2.1': '7.3',
-  '3.2.2': '11.9',
+  '3.1.2': '8.7',
+  '3.2.1': '7.4',
+  '3.2.2': '7.4',
   '3.2.3': '12.2',
-  '3.2.4': '12.3',
+  '3.2.4': '11.3',
   '3.3.1': '11.10',
   '3.3.2': '11.1',
   '3.3.3': '11.10',
@@ -225,7 +261,11 @@ const WCAG_VERS_RGAA = {
 const LIBELLES_CRITERES = {
   '1.1': 'Chaque image porteuse d\'information a-t-elle une alternative textuelle ?',
   '1.2': 'Chaque image de decoration est-elle correctement ignoree ?',
-  '1.5': 'Chaque image utilisee comme CAPTCHA a-t-elle une alternative ?',
+  '1.3': 'L\'alternative textuelle de chaque image porteuse d\'information est-elle pertinente ?',
+  '1.4': 'L\'alternative d\'une image CAPTCHA permet-elle d\'en identifier la nature et la fonction ?',
+  '1.5': 'Chaque CAPTCHA a-t-il une solution d\'acces alternatif ?',
+  '1.6': 'Chaque image porteuse d\'information a-t-elle, si necessaire, une description detaillee ?',
+  '1.9': 'Chaque legende d\'image est-elle correctement reliee a l\'image ?',
   '1.8': 'Chaque image texte est-elle remplacee par du texte stylise ?',
   '2.1': 'Chaque cadre a-t-il un titre de cadre ?',
   '2.2': 'Le titre de chaque cadre est-il pertinent ?',
@@ -234,30 +274,45 @@ const LIBELLES_CRITERES = {
   '3.3': 'Les couleurs des elements d\'interface sont-elles suffisamment contrastees ?',
   '4.1': 'Chaque media temporel a-t-il une transcription ou des sous-titres ?',
   '4.3': 'Chaque media temporel pre-enregistre a-t-il des sous-titres synchronises ?',
-  '4.19': 'Le son declenche automatiquement est-il controlable ?',
+  '5.1': 'Chaque tableau de donnees complexe a-t-il un resume ?',
+  '4.5': 'Chaque media temporel a-t-il, si necessaire, une audiodescription synchronisee ?',
+  '4.10': 'Chaque son declenche automatiquement est-il controlable ?',
   '5.3': 'Un tableau de mise en forme reste-t-il comprehensible en linearisant ?',
   '5.4': 'Chaque tableau de donnees a-t-il un titre ?',
   '5.6': 'Les en-tetes de colonnes et de lignes sont-ils correctement declares ?',
   '5.7': 'La technique de liaison entre cellules et en-tetes est-elle pertinente ?',
+  '5.8': 'Un tableau de mise en forme n\'utilise-t-il aucun element propre aux tableaux de donnees ?',
   '6.1': 'Chaque lien est-il explicite ?',
+  '6.2': 'Chaque lien a-t-il un intitule ?',
   '7.1': 'Chaque script est-il compatible avec les technologies d\'assistance ?',
   '7.3': 'Chaque script est-il controlable par le clavier et la souris ?',
-  '7.4': 'Chaque script qui modifie le contenu previent-il l\'utilisateur ?',
+  '7.4': 'Chaque script qui change le contexte previent-il l\'utilisateur ?',
   '7.5': 'Les messages de statut sont-ils correctement restitues ?',
+  '8.1': 'Chaque page web est-elle definie par un type de document ?',
   '8.2': 'Le code source est-il valide selon le type de document ?',
   '8.3': 'La langue par defaut est-elle presente ?',
   '8.4': 'Le code de langue est-il pertinent ?',
   '8.5': 'Chaque page a-t-elle un titre de page ?',
-  '8.8': 'Les changements de langue sont-ils indiques dans le code ?',
+  '8.7': 'Les changements de langue sont-ils indiques dans le code ?',
+  '8.8': 'Le code de langue de chaque changement de langue est-il valide et pertinent ?',
   '9.1': 'L\'information est-elle structuree par des titres pertinents ?',
+  '8.10': 'Les changements du sens de lecture sont-ils signales ?',
+  '9.2': 'La structure du document est-elle coherente ?',
   '9.3': 'Chaque liste est-elle correctement structuree ?',
+  '10.1': 'Des feuilles de styles sont-elles utilisees pour controler la presentation ?',
   '10.3': 'L\'information reste-t-elle comprehensible sans les feuilles de style ?',
   '10.4': 'Le texte reste-t-il lisible a 200 % de zoom ?',
+  '10.6': 'Chaque lien dont la nature n\'est pas evidente est-il visible par rapport au texte ?',
   '10.7': 'La prise de focus est-elle visible ?',
+  '10.9': 'L\'information n\'est-elle pas donnee uniquement par la forme, la taille ou la position ?',
   '10.11': 'Le contenu est-il presentable sans defilement bidirectionnel ?',
   '10.12': 'Les proprietes d\'espacement du texte sont-elles redefinissables ?',
   '10.13': 'Les contenus additionnels au survol sont-ils controlables ?',
   '11.1': 'Chaque champ de formulaire a-t-il une etiquette ?',
+  '11.2': 'Chaque etiquette associee a un champ est-elle pertinente ?',
+  '11.3': 'Les etiquettes des champs de meme fonction sont-elles coherentes ?',
+  '11.5': 'Les champs de meme nature sont-ils regroupes, si necessaire ?',
+  '11.6': 'Chaque regroupement de champs a-t-il une legende ?',
   '11.9': 'L\'intitule de chaque bouton est-il pertinent ?',
   '11.10': 'Le controle de saisie est-il utilise de maniere pertinente ?',
   '11.13': 'La saisie peut-elle etre completee automatiquement ?',
@@ -267,8 +322,11 @@ const LIBELLES_CRITERES = {
   '12.6': 'Les zones de regroupement de contenus sont-elles atteignables ?',
   '12.7': 'Un lien d\'evitement est-il present en debut de page ?',
   '12.8': 'L\'ordre de tabulation est-il coherent ?',
+  '12.9': 'La navigation ne contient-elle aucun piege au clavier ?',
   '12.10': 'Les raccourcis clavier sont-ils controlables ?',
   '13.1': 'L\'utilisateur garde-t-il le controle des limites de temps ?',
+  '13.3': 'Chaque document bureautique en telechargement a-t-il, si necessaire, une version accessible ?',
+  '13.5': 'Chaque contenu cryptique (art ASCII, emoticone...) a-t-il une alternative ?',
   '13.8': 'Les contenus en mouvement sont-ils controlables ?'
 };
 
@@ -282,14 +340,18 @@ const LIBELLES_CRITERES = {
 
 const TECHNIQUES_VERS_RGAA = {
   H64: '2.1',   // titre de cadre (iframe), et non lien d'evitement
+  H67: '1.2',   // image decorative (alt vide) avec un title
   H63: '5.7',   // attribut scope dans un tableau
   H43: '5.7',   // liaison headers / id
   H39: '5.4',   // caption de tableau
   H73: '5.4',   // attribut summary
   H44: '11.1',  // label associe a un champ
+  H71: '11.6',  // fieldset sans legend
+  F92: '5.8',   // role presentation sur un element qui garde une semantique (tableau)
+  F68: '11.1',  // champ de formulaire sans etiquette
   H65: '11.1',  // title sur un champ sans label
   H32: '11.9',  // bouton de soumission
-  H30: '6.1',   // intitule de lien
+  H30: '6.2',   // intitule de lien
   H25: '8.5',   // titre de page
   H57: '8.3',   // langue par defaut
   H42: '9.1',   // titres de section
@@ -297,6 +359,22 @@ const TECHNIQUES_VERS_RGAA = {
   F40: '13.1',  // rafraichissement automatique
   F41: '13.1'   // redirection automatique
 };
+
+/* ------------------------------------------------------------------ */
+/* 4 ter. Technique H91 de HTML_CodeSniffer                            */
+/*        Elle verifie le nom accessible de tout element interactif,   */
+/*        et passe par le WCAG 4.1.2 (critere 7.1). Le sous-type       */
+/*        present dans le code indique la vraie thematique RGAA.       */
+/* ------------------------------------------------------------------ */
+
+const H91_VERS_RGAA = [
+  ['.H91.A.', '6.2'],         // lien sans intitule
+  ['.H91.Button', '11.9'],    // bouton sans intitule
+  ['.H91.Fieldset', '11.6'],  // regroupement sans legende
+  ['.H91.Input', '11.1'],     // champ de saisie sans etiquette
+  ['.H91.Select', '11.1'],    // liste deroulante sans etiquette
+  ['.H91.Textarea', '11.1']   // zone de texte sans etiquette
+];
 
 /* ------------------------------------------------------------------ */
 /* 5. Resolution d'une anomalie vers un critere RGAA                   */
@@ -310,8 +388,17 @@ function resoudreCritere(anomalie) {
     return { critere: AXE_VERS_RGAA[code], source: 'axe' };
   }
 
-  // Cas 2 : technique HTML_CodeSniffer connue (prioritaire sur le WCAG seul)
-  const technique = code.match(/\.((?:H|F|G|SCR|ARIA)\d+)(?:\.|$)/);
+  // Cas 2 : technique H91, classee selon le type d'element
+  const h91 = H91_VERS_RGAA.find(([motif]) => code.includes(motif));
+  if (h91) {
+    return { critere: h91[1], source: 'technique H91' };
+  }
+
+  // Cas 3 : technique HTML_CodeSniffer connue (prioritaire sur le WCAG seul)
+  const technique = code.match(/\.((?:H|F|G|SCR|ARIA)\d+)(?:[.,]|$)/);
+  if (technique && technique[1] === 'F92' && !/^<table/i.test(anomalie.context || '')) {
+    return { critere: '7.1', source: 'technique F92' };
+  }
   if (technique && TECHNIQUES_VERS_RGAA[technique[1]]) {
     return {
       critere: TECHNIQUES_VERS_RGAA[technique[1]],
@@ -319,7 +406,7 @@ function resoudreCritere(anomalie) {
     };
   }
 
-  // Cas 3 : code HTML_CodeSniffer, on extrait le critere WCAG (ex. 1_1_1)
+  // Cas 4 : code HTML_CodeSniffer, on extrait le critere WCAG (ex. 1_1_1)
   const correspondance = code.match(/\.(\d+)_(\d+)_(\d+)(?:\.|$)/);
   if (correspondance) {
     const wcag = `${correspondance[1]}.${correspondance[2]}.${correspondance[3]}`;
@@ -339,7 +426,7 @@ function resoudreCritere(anomalie) {
 function lireRapport(chemin) {
   if (!fs.existsSync(chemin)) {
     console.error(`Rapport introuvable : ${chemin}`);
-    console.error('Lancez d\'abord pa11y-ci, puis relancez ce script.');
+    console.error('Lancez d\'abord le test d\'accessibilite, puis relancez ce script.');
     process.exit(1);
   }
 
@@ -525,7 +612,7 @@ function main() {
     if (indexJson !== -1 && i === indexJson + 1) return false;
     return true;
   });
-  const chemin = path.resolve(positionnels[0] || './pa11y-report.json');
+  const chemin = path.resolve(positionnels[0] || './a11y-report.json');
 
   const { anomalies } = lireRapport(chemin);
   const groupes = regrouper(anomalies);

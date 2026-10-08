@@ -1,0 +1,36 @@
+# ---------------------------------------------------------------------------
+# Kit d'accessibilite Chromium (pa11y + tests bonus) - WCAG 2.1 AA / RGAA 4.1
+#
+# A inclure depuis le .gitlab-ci.yml a la racine du projet :
+#   include:
+#     - local: Chromium-a11y/gitlab-ci.yml
+#
+# A adapter : la liste des URLs dans Chromium-a11y/pa11yci.json
+# ---------------------------------------------------------------------------
+
+accessibilite_chromium:
+  stage: test
+  image: registry.gitlab.com/gitlab-ci-utils/gitlab-pa11y-ci:latest
+
+  variables:
+    DOSSIER_SERVI: "."
+    PORT_TEST: "3000"
+
+  script:
+    - npx --yes serve "$DOSSIER_SERVI" -l "$PORT_TEST" &
+    - npx --yes wait-on "http://localhost:$PORT_TEST" --timeout 60000
+    - cd Chromium-a11y
+    - pa11y-ci --config pa11yci.json || PA11Y_STATUS=$?
+    - node tests-bonus-chromium.js || BONUS_STATUS=$?
+    - node rgaa-report.js pa11y-report.json --json rgaa-summary.json
+    - exit ${PA11Y_STATUS:-${BONUS_STATUS:-0}}
+  allow_failure: true
+
+  artifacts:
+    when: always
+    expose_as: "Rapport accessibilite Chromium"
+    paths:
+      - Chromium-a11y/pa11y-html/
+      - Chromium-a11y/pa11y-report.json
+      - Chromium-a11y/rgaa-summary.json
+    expire_in: 30 days
