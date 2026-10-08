@@ -1,6 +1,8 @@
 node_modules/
-a11y-report.json
+pa11y-html/
 rgaa-summary.json
 capture-*.png
 resultats.txt
 serveur.log
+pa11y-report.json
+pa11yci-url.json

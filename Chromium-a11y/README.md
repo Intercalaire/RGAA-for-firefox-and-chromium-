@@ -25,7 +25,7 @@ Les deux kits (Chromium-a11y et Firefox-a11y) peuvent être inclus dans le même
 ### Lire les résultats
 
 - Chromium-a11y utilise deux moteurs, axe et htmlcs : une même anomalie peut donc apparaître deux fois.
-- Les tests bonus (fichier tests-bonus.js) sont ajoutés au même rapport, avec le moteur « bonus » et des codes commençant par `kit-`. Ils couvrent notamment le focus visible (10.7), le piège clavier (12.9), le lien d'évitement (12.7), l'affichage à 320 px (10.11), les images (1.2 à 1.9), les contrastes sur image et des composants (3.2, 3.3), les tableaux (5.x), la structure (8.1, 9.2, 9.3, 10.1) et les formulaires (11.5, 11.6, 11.10, 11.13).
+- Les tests bonus (fichier tests-bonus.js) sont ajoutés au même rapport, avec le moteur « bonus » et des codes commençant par `kit-`. Ils couvrent notamment le focus visible (10.7), le piège clavier (12.9), le lien d'évitement (12.7), l'affichage à 320 px (10.11), les images (1.2 à 1.9), les contrastes sur image et des composants (3.2, 3.3), les tableaux (5.x), la structure et les titres (8.1, 9.1, 9.2, 9.3, 10.1, 12.6, 12.8) et les formulaires (11.5, 11.6, 11.10, 11.13).
 - Les erreurs sont à corriger. Les avertissements (« à vérifier ») sont des cas probables qu'une personne doit confirmer : CAPTCHA, PDF, graphique sans description, alternative trop longue...
 - pa11y n'affiche que les erreurs d'axe : les contrastes qu'axe ne sait pas mesurer (texte sur image ou dégradé) n'apparaissent pas. Le test bonus 3.2 les mesure directement sur l'écran.
 - htmlcs peut signaler des éléments invisibles (iframe de statistiques de 1 px, par exemple) ou des logos SVG pourtant nommés : en cas de doute, vérifier si axe signale aussi l'élément.

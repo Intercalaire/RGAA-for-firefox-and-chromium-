@@ -468,6 +468,42 @@ function pageTestsStructure() {
     }
   });
 
+  // 9.1
+  const titres = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')).filter((h) => !masque(h));
+  const h1 = titres.filter((h) => h.tagName === 'H1' || h.getAttribute('aria-level') === '1');
+  if (h1.length === 0) {
+    ajouter('kit-titre-h1', 'warning', 'Aucun titre de niveau 1 (h1) dans la page', document.body);
+  } else if (h1.length > 1) {
+    h1.slice(1).forEach((h) => ajouter('kit-titre-h1', 'warning', h1.length + ' titres de niveau 1 (h1) dans la page', h));
+  }
+  titres.forEach((h) => {
+    const alternatives = Array.from(h.querySelectorAll('img[alt], [aria-label]'))
+      .map((e) => e.getAttribute('alt') || e.getAttribute('aria-label')).join('');
+    if (!texte(h.textContent + alternatives + (h.getAttribute('aria-label') || ''))) {
+      ajouter('kit-titre-vide', 'error', 'Titre vide', h);
+    }
+  });
+
+  // 12.6
+  const reperes = (selecteur) => Array.from(document.querySelectorAll(selecteur))
+    .filter((el) => !masque(el) && (el.hasAttribute('role') || !el.closest('article, aside, main, nav, section')));
+  const principaux = Array.from(document.querySelectorAll('main, [role="main"]')).filter((el) => !masque(el));
+  principaux.slice(1).forEach((el) => ajouter('kit-reperes', 'error',
+    principaux.length + ' zones de contenu principal (main) visibles dans la page', el));
+  [['header, [role="banner"]', "d'en-tete (header)"], ['footer, [role="contentinfo"]', 'de pied de page (footer)']]
+    .forEach(([selecteur, nom]) => {
+      const zones = reperes(selecteur);
+      zones.slice(1).forEach((el) => ajouter('kit-reperes', 'warning', zones.length + ' zones ' + nom + ' de premier niveau', el));
+    });
+
+  // 12.8
+  document.querySelectorAll('[tabindex]').forEach((el) => {
+    if (parseInt(el.getAttribute('tabindex'), 10) > 0 && !masque(el)) {
+      ajouter('kit-tabindex', 'warning', 'tabindex="' + el.getAttribute('tabindex')
+        + '" : un tabindex positif modifie l\'ordre de tabulation naturel', el);
+    }
+  });
+
   // 9.3
   const PUCE = /^([-\u2013\u2014\u2022\u25aa\u25cf*]|\d+[.)])\s+\S/;
   const vusListe = new Set();

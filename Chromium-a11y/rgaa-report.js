@@ -194,6 +194,10 @@ const AXE_VERS_RGAA = {
   'kit-autocomplete': '11.13',
   'kit-document': '13.3',
   'kit-emoji': '13.5',
+  'kit-titre-h1': '9.1',
+  'kit-titre-vide': '9.1',
+  'kit-reperes': '12.6',
+  'kit-tabindex': '12.8',
 
   // 13. Consultation
   'meta-refresh': '13.1',

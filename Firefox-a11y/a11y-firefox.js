@@ -29,13 +29,16 @@ const { executerTestsBonus } = require('./tests-bonus');
 
 // Pages a tester. Le port doit correspondre a celui de "serve" (3000 par defaut).
 const URLS = [
-  'http://localhost:3000/',
-  'http://localhost:3000/contact.html',
-  'http://localhost:3000/mentions-legales.html',
-  'http://localhost:3000/accessibilite.html',
-  'http://localhost:3000/plan-du-site.html',
-  'http://localhost:3000/articles/exemple-article.html'
+  'http://localhost:3000/site-test/page-correcte.html',
+  'http://localhost:3000/site-test/erreurs-bonus.html',
+  'http://localhost:3000/site-test/erreurs-bonus-2.html',
+  'http://localhost:3000/site-test/erreurs-images-couleurs.html',
+  'http://localhost:3000/site-test/erreurs-structure-formulaires.html',
+  'http://localhost:3000/site-test/erreurs-titres-reperes.html',
+  'http://localhost:3000/site-test/piege-blocage.html',
+  'http://localhost:3000/site-test/piege-boucle.html'
 ];
+
 if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];

@@ -3,24 +3,45 @@
   "concurrency": 2,
   "defaults": {
     "standard": "WCAG2AA",
-    "runners": ["axe", "htmlcs"],
+    "runners": [
+      "axe",
+      "htmlcs"
+    ],
     "timeout": 30000,
     "wait": 2000,
     "levelCapWhenNeedsReview": "warning",
     "chromeLaunchConfig": {
-      "args": ["--no-sandbox", "--disable-dev-shm-usage"]
+      "args": [
+        "--no-sandbox",
+        "--disable-dev-shm-usage"
+      ]
     },
     "ignore": [],
     "reporters": [
       "cli",
-      ["json", { "fileName": "./pa11y-report.json" }],
-      ["pa11y-ci-reporter-html", { "destination": "./pa11y-html", "includeZeroIssues": true }]
+      [
+        "json",
+        {
+          "fileName": "./pa11y-report.json"
+        }
+      ],
+      [
+        "pa11y-ci-reporter-html",
+        {
+          "destination": "./pa11y-html",
+          "includeZeroIssues": true
+        }
+      ]
     ]
   },
   "urls": [
-    "http://localhost:3000/",
-    "http://localhost:3000/mentions-legales.html",
-    "http://localhost:3000/accessibilite.html",
-    "http://localhost:3000/plan-du-site.html"
+    "http://localhost:3000/site-test/page-correcte.html",
+    "http://localhost:3000/site-test/erreurs-bonus.html",
+    "http://localhost:3000/site-test/erreurs-bonus-2.html",
+    "http://localhost:3000/site-test/erreurs-images-couleurs.html",
+    "http://localhost:3000/site-test/erreurs-structure-formulaires.html",
+    "http://localhost:3000/site-test/erreurs-titres-reperes.html",
+    "http://localhost:3000/site-test/piege-blocage.html",
+    "http://localhost:3000/site-test/piege-boucle.html"
   ]
 }
