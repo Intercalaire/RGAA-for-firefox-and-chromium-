@@ -10,14 +10,33 @@
 .PHONY: aide installer test rapport fichier clean fclean
 
 # Systemes plus recents que Playwright 1.56 (Ubuntu 26.04, Debian 13...) :
+# si l'installation normale de Firefox echoue, make installer recommence
+# automatiquement en se faisant passer pour PLATEFORME_SECOURS. On peut
+# aussi imposer une plateforme : make installer PLATEFORME=debian12-x64
 PLATEFORME         ?=
 PLATEFORME_SECOURS ?= ubuntu24.04-x64
 
+# ---------------------------------------------------------------------------
+# Serveur local
+#
+# Le site est servi depuis la RACINE du projet (le dossier parent du kit).
+# Si un serveur repond deja sur le port, il est reutilise ; sinon, on en
+# demarre un pour la duree du test, puis on l'arrete.
+# ---------------------------------------------------------------------------
 
 PORT    ?= 3000
 RACINE  ?= ..
 SERVEUR ?= npx --yes serve "$(RACINE)" -l $(PORT) --no-port-switching
 
+# Tester seulement certaines pages, sans toucher a la liste :
+#   make test URL=/contact.html             (page du serveur local)
+#   make test URL=https://exemple.gouv.fr/  (adresse complete)
+#   make test URL=/a.html,/b.html           (plusieurs pages)
+URL      ?=
+A11Y_URL  = $(shell printf '%s' "$(URL)" | tr ',' '\n' | sed 's|^/|http://localhost:$(PORT)/|' | paste -sd, -)
+
+# Demarre le serveur si besoin, execute la commande passee en parametre,
+# arrete le serveur et restitue le code de sortie de la commande.
 define avec_serveur
 	@if curl -s -o /dev/null "http://localhost:$(PORT)"; then \
 		echo "Serveur deja present sur le port $(PORT) : il est reutilise."; \
@@ -44,6 +63,7 @@ aide:
 	@echo "  make clean       supprime les rapports generes"
 	@echo "  make fclean      supprime aussi node_modules (relancer make installer ensuite)"
 	@echo ""
+	@echo "Option : make test URL=/contact.html (une ou plusieurs pages, separees par des virgules)"
 	@echo "Systeme non reconnu : make installer reessaie seul en mode $(PLATEFORME_SECOURS)"
 
 installer:
@@ -62,7 +82,7 @@ installer:
 
 test:
 	@[ -d node_modules ] || { echo "Dependances absentes : lancez d'abord make installer"; exit 1; }
-	$(call avec_serveur, npm run --silent a11y)
+	$(call avec_serveur, A11Y_URL="$(A11Y_URL)" npm run --silent a11y)
 
 fichier:
 	@$(MAKE) --no-print-directory test > resultats.txt 2>&1; S=$$?; \

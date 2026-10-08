@@ -25,6 +25,10 @@ const CONFIG = './pa11yci.json';
 const RAPPORT = './pa11y-report.json';
 const ATTENTE_MS = 2000;
 
+/* ------------------------------------------------------------------ */
+/* Retrouver le Puppeteer de pa11y-ci                                  */
+/* ------------------------------------------------------------------ */
+
 // Choisit le fichier d'entree d'un paquet a partir de son package.json.
 function entreeDuPaquet(pkg) {
   const choisir = (e) => {
@@ -42,6 +46,8 @@ function entreeDuPaquet(pkg) {
   return choisir(exp) || pkg.module || pkg.main || 'index.js';
 }
 
+// Liste les dossiers ou Puppeteer peut se trouver, en remontant depuis pa11y-ci,
+// comme le fait Node pour resoudre un module.
 function dossiersCandidats() {
   const candidats = [];
   if (process.env.A11Y_PUPPETEER) candidats.push(process.env.A11Y_PUPPETEER);
@@ -77,7 +83,10 @@ async function chargerPuppeteer() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+
 function lireUrls() {
+  if (process.env.A11Y_URL) return process.env.A11Y_URL.split(',').filter(Boolean);
   const config = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
   return (config.urls || [])
     .map((u) => (typeof u === 'string' ? u : u && u.url))

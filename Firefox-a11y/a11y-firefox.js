@@ -36,6 +36,7 @@ const URLS = [
   'http://localhost:3000/plan-du-site.html',
   'http://localhost:3000/articles/exemple-article.html'
 ];
+if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 

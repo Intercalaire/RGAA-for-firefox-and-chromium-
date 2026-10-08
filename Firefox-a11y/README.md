@@ -55,6 +55,11 @@ Pour imposer une autre plateforme :
 ```
     make test
 ```
+Pour tester seulement certaines pages, sans modifier a11y-firefox.js :
+```
+    make test URL=/contact.html
+    make test URL=https://exemple.gouv.fr/,/plan-du-site.html
+```
 Le serveur local est démarré automatiquement à la racine du projet, puis arrêté à la fin. S'il tourne déjà sur le port 3000, il est réutilisé.
 
 Si des erreurs sont trouvées, make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, Firefox absent...) : lire le message au-dessus. Une erreur « Cannot find module » signifie que node_modules est abîmé : lancer `make fclean` puis `make installer`.

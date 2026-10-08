@@ -44,20 +44,25 @@ Toutes les commandes se lancent depuis le dossier Chromium-a11y. Taper `make` se
 ```
 Ne pas lancer `sudo make installer` : Chrome serait alors installé pour root et pa11y ne le trouverait pas. Si `npm install -g` manque de droits (erreur EACCES), `make installer` recommence tout seul avec sudo et demande le mot de passe ; le message d'erreur qui s'affiche au passage est donc normal.
 
-Le numéro de version de Chrome doit être celui qu'attend pa11y-ci. Après une mise à jour de pa11y-ci, le nouveau numéro est indiqué dans le message d'erreur « Could not find Chrome (ver. ...) » ; il suffit alors de lancer :
+La version de Chrome doit être celle qu'attend pa11y-ci : le Makefile la lit directement dans pa11y-ci. Après une mise à jour de pa11y-ci (erreur « Could not find Chrome (ver. ...) »), il suffit de lancer :
 ```
-    make chrome CHROME_VERSION=x.y.z
+    make chrome
 ```
-et de reporter ce numéro dans la ligne `CHROME_VERSION` du Makefile.
+Pour imposer une version : `make chrome CHROME_VERSION=x.y.z`.
 
 Si Chrome refuse de démarrer avec l'erreur « error while loading shared libraries » :
 ```
-    sudo npx @puppeteer/browsers install chrome@154.0.8037.57 --path ~/.cache/puppeteer --install-deps
+    sudo npx @puppeteer/browsers install chrome@x.y.z --path ~/.cache/puppeteer --install-deps
 ```
 
 2. Lancer le test :
 ```
     make test
+```
+Pour tester seulement certaines pages, sans modifier pa11yci.json :
+```
+    make test URL=/contact.html
+    make test URL=https://exemple.gouv.fr/,/plan-du-site.html
 ```
 Le serveur local est démarré automatiquement à la racine du projet, puis arrêté à la fin. S'il tourne déjà sur le port 3000, il est réutilisé.
 
