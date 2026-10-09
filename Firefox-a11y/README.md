@@ -27,10 +27,11 @@ Les deux kits (Chromium-a11y et Firefox-a11y) peuvent être inclus dans le même
 ### Lire les résultats
 
 - Firefox-a11y utilise le moteur axe : les violations sont des erreurs, les cas qu'axe ne sait pas trancher sont des avertissements (« à vérifier »).
-- Les tests bonus (fichier tests-bonus.js) sont ajoutés au même rapport, avec des codes commençant par `kit-`. Ils couvrent notamment le focus visible (10.7), le piège clavier (12.9), le lien d'évitement (12.7), l'affichage à 320 px (10.11), les images (1.2 à 1.9), les contrastes sur image et des composants (3.2, 3.3), les tableaux (5.x), la structure et les titres (8.1, 9.1, 9.2, 9.3, 10.1, 12.6, 12.8) et les formulaires (11.5, 11.6, 11.10, 11.13).
+- Les tests bonus (fichier tests-bonus.js) sont ajoutés au même rapport, avec des codes commençant par `kit-`. Ils couvrent notamment le focus visible (10.7), le piège clavier (12.9), le lien d'évitement (12.7), l'affichage à 320 px (10.11), l'espacement du texte (10.12), les images (1.2 à 1.9), les contrastes sur image et des composants (3.2, 3.3), les médias (4.11), les tableaux (5.x), l'intitulé visible contenu dans le nom accessible (6.1, 7.1, 11.2, 11.9), les composants au clavier (7.3), la structure et les titres (8.1, 9.1, 9.2, 9.3, 10.1, 12.6, 12.8), les formulaires (11.4, 11.5, 11.6, 11.8, 11.10, 11.13), les nouvelles fenêtres (13.2) et les contenus en mouvement (13.8).
 - Les erreurs sont à corriger. Les avertissements sont des cas probables qu'une personne doit confirmer : CAPTCHA, PDF, graphique sans description, alternative trop longue...
-- Sur un site DSFR, axe met souvent des dizaines de contrastes « à vérifier » (critère 3.2) : il ne sait pas mesurer certains fonds. Ce ne sont pas des erreurs. Si les tests bonus ne signalent rien sur le même texte, le contraste a été mesuré et il est correct.
+- Quand axe ne sait pas trancher un contraste (critère 3.2), le kit le mesure lui-même : à partir des couleurs, ou sur une capture d'écran pour un texte sur image ou dégradé. Les contrastes suffisants sont listés à la fin du récapitulatif, sous « Ecartees apres verification sur la page » ; les contrastes insuffisants deviennent des erreurs ; les autres restent « à vérifier », avec la fourchette mesurée ou la raison dans le message (« non mesurable par le kit : ... »).
 - axe peut aussi mettre « à vérifier » des attributs ARIA des fenêtres modales du DSFR (critère 7.1) : le composant standard du DSFR est normalement correct.
+- Si un site renvoie une page de vérification anti-robot (« Vérification que vous êtes un humain »), les tests bonus ne sont pas faits sur cette page : elle est signalée en échec au lieu de donner de faux résultats.
 - Le récapitulatif final classe toutes les anomalies par critère RGAA. Il ne remplace pas un audit : les outils automatiques ne couvrent qu'une partie des 106 critères.
 
 ### Pour faire ses tests en local
@@ -62,7 +63,7 @@ Pour tester seulement certaines pages, sans modifier a11y-firefox.js :
 ```
 Le serveur local est démarré automatiquement à la racine du projet, puis arrêté à la fin. S'il tourne déjà sur le port 3000, il est réutilisé.
 
-Si des erreurs sont trouvées, make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, Firefox absent...) : lire le message au-dessus. Une erreur « Cannot find module » signifie que node_modules est abîmé : lancer `make fclean` puis `make installer`.
+S'il reste des erreurs (une fois les résultats écartés retirés), make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, Firefox absent...) : lire le message au-dessus. Une erreur « Cannot find module » signifie que node_modules est abîmé : lancer `make fclean` puis `make installer`.
 
 Pour voir ce que mesure le test de contraste sur image (3.2), lancer :
 ```

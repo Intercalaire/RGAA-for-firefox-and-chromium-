@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 
 .DEFAULT_GOAL := aide
-.PHONY: aide installer test rapport fichier clean fclean
+.PHONY: aide installer test rapport fichier verif attendu clean fclean
 
 # Systemes plus recents que Playwright 1.56 (Ubuntu 26.04, Debian 13...) :
 # si l'installation normale de Firefox echoue, make installer recommence
@@ -35,6 +35,9 @@ SERVEUR ?= npx --yes serve "$(RACINE)" -l $(PORT) --no-port-switching
 URL      ?=
 A11Y_URL  = $(shell printf '%s' "$(URL)" | tr ',' '\n' | sed 's|^/|http://localhost:$(PORT)/|' | paste -sd, -)
 
+# Verification des tests bonus : anomalies attendues sur les pages de test.
+ATTENDU ?= $(RACINE)/site-test/attendu.json
+
 # Demarre le serveur si besoin, execute la commande passee en parametre,
 # arrete le serveur et restitue le code de sortie de la commande.
 define avec_serveur
@@ -60,6 +63,8 @@ aide:
 	@echo "  make test        lance le serveur, l'analyse, les tests bonus et le recapitulatif"
 	@echo "  make fichier     comme make test, avec la sortie complete dans resultats.txt"
 	@echo "  make rapport     reaffiche le recapitulatif RGAA du dernier test"
+	@echo "  make verif       verifie que les tests bonus trouvent toujours les anomalies de attendu.json"
+	@echo "  make attendu     enregistre les resultats actuels comme nouvelle reference dans attendu.json"
 	@echo "  make clean       supprime les rapports generes"
 	@echo "  make fclean      supprime aussi node_modules (relancer make installer ensuite)"
 	@echo ""
@@ -91,8 +96,17 @@ fichier:
 rapport:
 	@node rgaa-report.js a11y-report.json
 
+# Lance le test sur les pages de attendu.json (sortie dans verif.log), puis
+# compare les anomalies des tests bonus a celles attendues.
+verif attendu:
+	@[ -f "$(ATTENDU)" ] || { echo "Fichier $(ATTENDU) introuvable"; exit 1; }
+	@echo "Test des pages de $(ATTENDU) (sortie complete dans verif.log)..."
+	@$(MAKE) --no-print-directory test URL="$$(node verif-kit.js --pages "$(ATTENDU)")" > verif.log 2>&1; \
+	grep -q "Error 1" verif.log && echo "Attention : le test signale une panne, voir verif.log"; \
+	node verif-kit.js a11y-report.json "$(ATTENDU)" $(if $(filter attendu,$@),--enregistrer)
+
 clean:
-	rm -f a11y-report.json rgaa-summary.json resultats.txt serveur.log capture-*.png
+	rm -f a11y-report.json rgaa-summary.json resultats.txt serveur.log verif.log capture-*.png
 
 fclean: clean
 	rm -rf node_modules/

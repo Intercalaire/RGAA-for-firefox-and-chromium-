@@ -8,7 +8,8 @@
  * par thematique et par critere du RGAA 4.1.
  *
  * Usage :
- *   node rgaa-report.js [chemin/vers/a11y-report.json] [--json fichier.json] [--strict]
+ *   node rgaa-report.js [chemin/vers/a11y-report.json] [--json fichier.json] [--strict] [--code]
+ *   --code : sortie 2 s'il reste des erreurs apres les resultats ecartes, 0 sinon
  *
  * Rappel important : il s'agit d'une TRADUCTION des regles WCAG remontees par
  * pa11y vers la nomenclature RGAA, pas d'un audit RGAA. Les outils automatiques
@@ -667,7 +668,9 @@ function main() {
     console.log(`Recapitulatif ecrit dans ${sortieJson}`);
   }
 
+  // --code : 2 s'il reste des erreurs une fois les resultats ecartes retires, 0 sinon.
   const erreurs = anomalies.filter((a) => (a.type || 'error') === 'error').length;
+  if (args.includes('--code')) process.exit(erreurs > 0 ? 2 : 0);
   process.exit(strict && erreurs > 0 ? 1 : 0);
 }
 

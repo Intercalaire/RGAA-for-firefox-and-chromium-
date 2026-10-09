@@ -78,17 +78,21 @@ pas-root:
 		echo "Ne lancez pas make avec sudo : relancez simplement make $(MAKECMDGOALS)"; exit 1; fi
 
 # Ordre impose : tests-bonus-chromium.js complete le rapport ecrit par pa11y-ci.
-# Le code de sortie est celui de pa11y-ci, ou a defaut celui des tests bonus.
+# Code de sortie : 1 si pa11y-ci ou les tests bonus tombent en panne ; sinon
+# celui du recapitulatif RGAA, une fois les resultats ecartes retires
+# (2 s'il reste des erreurs, 0 sinon).
 test:
 	@command -v pa11y-ci > /dev/null || { echo "pa11y-ci absent : lancez d'abord make installer"; exit 1; }
 	$(call avec_serveur, \
 		export A11Y_URL="$(A11Y_URL)"; CONFIG=pa11yci.json; \
 		if [ -n "$$A11Y_URL" ]; then $(CONFIG_URL) && CONFIG=pa11yci-url.json; echo "Test limite a : $$A11Y_URL"; fi; \
-		S=0; \
+		S=0; B=0; R=0; \
 		pa11y-ci --config $$CONFIG || S=$$?; \
-		node tests-bonus-chromium.js || { B=$$?; [ $$S -eq 0 ] && S=$$B; }; \
-		node rgaa-report.js pa11y-report.json --json rgaa-summary.json; \
-		exit $$S)
+		node tests-bonus-chromium.js || B=$$?; \
+		node rgaa-report.js pa11y-report.json --json rgaa-summary.json --code || R=$$?; \
+		if [ $$S -ne 0 ] && [ $$S -ne 2 ]; then exit $$S; fi; \
+		if [ $$B -eq 1 ]; then exit 1; fi; \
+		exit $$R)
 
 fichier:
 	@$(MAKE) --no-print-directory test > resultats.txt 2>&1; S=$$?; \
