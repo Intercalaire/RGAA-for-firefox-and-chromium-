@@ -211,6 +211,10 @@ const AXE_VERS_RGAA = {
   'kit-media-controles': '4.11',
   'kit-mouvement': '13.8',
   'kit-nouvelle-fenetre': '13.2',
+  'kit-systemes-navigation': '12.1',
+  'kit-menu-place': '12.2',
+  'kit-plan-site': '12.4',
+  'kit-moteur-recherche': '12.5',
   'kit-espacement': '10.12',
 
   // 13. Consultation
@@ -338,7 +342,9 @@ const LIBELLES_CRITERES = {
   '11.10': 'Le controle de saisie est-il utilise de maniere pertinente ?',
   '11.13': 'La saisie peut-elle etre completee automatiquement ?',
   '12.1': 'Chaque ensemble de pages a-t-il deux systemes de navigation ?',
-  '12.2': 'La navigation est-elle identique dans tout l\'ensemble de pages ?',
+  '12.2': 'Le menu et les barres de navigation sont-ils toujours a la meme place ?',
+  '12.4': 'La page plan du site est-elle atteignable de maniere identique ?',
+  '12.5': 'Le moteur de recherche est-il atteignable de maniere identique ?',
   '12.3': 'La page « plan du site » est-elle pertinente ?',
   '12.6': 'Les zones de regroupement de contenus sont-elles atteignables ?',
   '12.7': 'Un lien d\'evitement est-il present en debut de page ?',

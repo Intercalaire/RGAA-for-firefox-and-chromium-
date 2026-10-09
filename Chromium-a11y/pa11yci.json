@@ -34,16 +34,22 @@
       ]
     ]
   },
-  "urls": [
-    "http://localhost:3000/site-test/page-correcte.html",
-    "http://localhost:3000/site-test/erreurs-bonus.html",
-    "http://localhost:3000/site-test/erreurs-bonus-2.html",
-    "http://localhost:3000/site-test/erreurs-images-couleurs.html",
-    "http://localhost:3000/site-test/erreurs-structure-formulaires.html",
-    "http://localhost:3000/site-test/erreurs-titres-reperes.html",
-    "http://localhost:3000/site-test/piege-blocage.html",
-    "http://localhost:3000/site-test/piege-boucle.html",
-	"http://localhost:3000/site-test/erreurs-composants.html",
-	"http://localhost:3000/site-test/erreurs-audit.html"
+    "urls": [
+    { "url": "http://localhost:3000/site-test/page-correcte" },
+    { "url": "http://localhost:3000/site-test/erreurs-bonus" },
+    { "url": "http://localhost:3000/site-test/erreurs-bonus-2" },
+    { "url": "http://localhost:3000/site-test/erreurs-images-couleurs" },
+    { "url": "http://localhost:3000/site-test/erreurs-structure-formulaires" },
+    { "url": "http://localhost:3000/site-test/erreurs-titres-reperes" },
+    { "url": "http://localhost:3000/site-test/piege-blocage" },
+    { "url": "http://localhost:3000/site-test/piege-boucle" },
+    { "url": "http://localhost:3000/site-test/erreurs-composants" },
+    { "url": "http://localhost:3000/site-test/erreurs-audit" },
+    { "url": "http://127.0.0.1:3000/site-test/navigation/index" },
+    { "url": "http://127.0.0.1:3000/site-test/navigation/page-a" },
+    { "url": "http://127.0.0.1:3000/site-test/navigation/page-b" },
+    { "url": "http://127.0.0.1:3000/site-test/navigation/page-c" },
+    { "url": "http://127.0.0.1:3000/site-test/navigation/page-d" },
+    { "url": "http://127.0.0.1:3000/site-test/navigation/page-e" }
   ]
 }

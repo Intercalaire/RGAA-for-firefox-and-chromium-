@@ -1696,6 +1696,124 @@ async function attendreAntiRobot(page) {
   throw new Error('page de verification anti-robot (Cloudflare ou autre) : tests bonus non realises sur cette page');
 }
 
+// 12.1, 12.2, 12.4, 12.5 : menu, plan du site et moteur de recherche de la page.
+function pageNavigation() {
+  const norm = (t) => (t || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const visible = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  const chemin = (a) => {
+    try {
+      const u = new URL(a.getAttribute('href'), location.href);
+      return u.origin === location.origin ? u.pathname.replace(/(\/index)?\.html?$/, '').replace(/\/$/, '') + u.search : u.href;
+    } catch (e) { return a.getAttribute('href') || ''; }
+  };
+  // Position dans la zone qui contient l'element (en-tete, pied de page), sinon dans la page.
+  const place = (el) => {
+    if (!visible(el)) return null;
+    const zone = el.parentElement && el.parentElement.closest('header, footer, [role="banner"], [role="contentinfo"]');
+    const r = el.getBoundingClientRect();
+    const z = zone ? zone.getBoundingClientRect() : { left: -scrollX, top: -scrollY };
+    return { x: Math.round(r.left - z.left), y: Math.round(r.top - z.top), zone: zone ? zone.tagName.toLowerCase() : 'page' };
+  };
+  const decrire = (el) => ({ selecteur: window.__kitSelecteur(el), contexte: el.outerHTML.slice(0, 250) });
+  const intitule = (el) => norm([el.textContent, el.getAttribute('aria-label'), el.getAttribute('title')].join(' '));
+
+  const menus = Array.from(document.querySelectorAll('nav, [role="navigation"]'))
+    .filter((n) => !n.parentElement || !n.parentElement.closest('nav, [role="navigation"]'))
+    .filter((n) => !/fil d|ariane|breadcrumb|pagination|evitement|évitement|skip|acces rapide|accès rapide/
+      .test(norm([n.getAttribute('aria-label'), n.className, n.id].join(' '))))
+    .filter((n) => n.querySelectorAll('a[href]').length >= 3)
+    .map((n) => ({ liens: Array.from(n.querySelectorAll('a[href]')).map(chemin), place: place(n), el: n }));
+  const PLAN = /plan du site|plan de site|sitemap/;
+  const plan = Array.from(document.querySelectorAll('a[href]')).find((a) => PLAN.test(intitule(a)));
+  const champ = 'input[type="search"], input[name="q"], input[name="s"], input[name="search"], input[name="recherche"], input[name="query"]';
+  const recherche = document.querySelector('[role="search"], search')
+    || Array.from(document.querySelectorAll('form')).find((f) => f.querySelector(champ) && !f.closest('main, [role="main"]'))
+    || Array.from(document.querySelectorAll('button, a[href], [role="button"]'))
+      .find((b) => /^(rechercher|recherche|search)\b/.test(intitule(b)) && !b.closest('main, [role="main"], form'));
+  const contenu = document.querySelector('main, [role="main"]');
+
+  const elements = [['menu', menus[0] && menus[0].el], ['plan', plan], ['recherche', recherche], ['contenu', contenu]]
+    .filter(([, el]) => el);
+  elements.sort(([, a], [, b]) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  return {
+    menus: menus.map((m) => ({ liens: m.liens, place: m.place, ...decrire(m.el) })),
+    plan: plan ? { texte: norm(plan.textContent), cible: chemin(plan), place: place(plan), ...decrire(plan) } : null,
+    recherche: recherche ? { type: recherche.matches('a, button, [role="button"]') ? 'bouton' : 'formulaire',
+      texte: recherche.matches('a, button, [role="button"]') ? intitule(recherche) : '', place: place(recherche), ...decrire(recherche) } : null,
+    ordre: elements.map(([nom]) => nom)
+  };
+}
+
+const SITES_VUS = new Map();
+const ECART_PLACE = 16;
+
+async function testerNavigation(page) {
+  const n = await page.evaluate(pageNavigation);
+  const adresse = new URL(page.url());
+  const accueil = /\/(index\.html?)?$/.test(adresse.pathname);
+  const site = SITES_VUS.get(adresse.origin) || {};
+  SITES_VUS.set(adresse.origin, site);
+  const anomalies = [];
+  const signaler = (code, message, cible) => anomalies.push(versFormatPa11y({
+    code, type: 'warning', message, selector: cible ? cible.selecteur : 'body', context: cible ? cible.contexte : '<body>'
+  }));
+  const decalage = (a, b) => a && b && (a.zone !== b.zone || Math.abs(a.x - b.x) > ECART_PLACE || Math.abs(a.y - b.y) > ECART_PLACE);
+  // Ordre relatif : l'element est-il toujours avant (ou apres) chacun des autres ?
+  const ordreDifferent = (ref, nom) => ref.ordre.includes(nom) && n.ordre.includes(nom)
+    && ref.ordre.filter((x) => x !== nom && n.ordre.includes(x))
+      .some((x) => (ref.ordre.indexOf(nom) < ref.ordre.indexOf(x)) !== (n.ordre.indexOf(nom) < n.ordre.indexOf(x)));
+
+  // 12.1 : evalue sur la premiere page testee du site, en general l'accueil.
+  const presents = [n.menus.length && 'menu de navigation', n.plan && 'plan du site', n.recherche && 'moteur de recherche'].filter(Boolean);
+  const premiere = !site.vu;
+  site.vu = true;
+  if (premiere && presents.length < 2) {
+    signaler('kit-systemes-navigation', 'Moins de deux systemes de navigation (menu, plan du site, moteur de recherche) : '
+      + (presents.join(', ') || 'aucun') + ' (non applicable pour un site de tres peu de pages)');
+  }
+
+  // 12.2 : la page d'accueil est un cas particulier.
+  if (!accueil && n.menus.length) {
+    if (!site.menu) site.menu = { ...n.menus[0], ordre: n.ordre, url: page.url() };
+    else {
+      const ref = site.menu;
+      const proches = n.menus.map((m) => {
+        const communs = m.liens.filter((l) => ref.liens.includes(l)).length;
+        return { m, score: communs / new Set([...m.liens, ...ref.liens]).size };
+      }).sort((a, b) => b.score - a.score);
+      const meme = proches[0] && proches[0].score >= 0.5 ? proches[0].m : null;
+      if (meme && decalage(meme.place, ref.place)) {
+        signaler('kit-menu-place', 'Menu de navigation pas a la meme place que sur ' + ref.url, meme);
+      } else if (meme && ordreDifferent(ref, 'menu')) {
+        signaler('kit-menu-place', 'Menu de navigation pas dans le meme ordre du code source que sur ' + ref.url, meme);
+      }
+    }
+  }
+
+  // 12.4 et 12.5 : seulement entre pages qui partagent le meme menu principal
+  // (meme ensemble de pages ; une page de processus ou isolee n'est pas comparee).
+  if (!site.menuEnsemble && n.menus.length) site.menuEnsemble = n.menus[0].liens;
+  const memeEnsemble = !site.menuEnsemble || n.menus.some((m) => {
+    const communs = m.liens.filter((l) => site.menuEnsemble.includes(l)).length;
+    return communs / new Set([...m.liens, ...site.menuEnsemble]).size >= 0.5;
+  });
+  if (memeEnsemble) [['plan', 'kit-plan-site', 'Lien vers le plan du site'], ['recherche', 'kit-moteur-recherche', 'Moteur de recherche']]
+    .forEach(([nom, code, libelle]) => {
+      const ici = n[nom];
+      const ref = site[nom];
+      if (!ref) {
+        if (ici) site[nom] = { ...ici, ordre: n.ordre, url: page.url() };
+        return;
+      }
+      if (!ici) signaler(code, libelle + ' absent, alors qu\'il est present sur ' + ref.url);
+      else if (ici.texte !== ref.texte || ici.cible !== ref.cible || ici.type !== ref.type) {
+        signaler(code, libelle + ' different de celui de ' + ref.url + ' (fonctionnalite non identique)', ici);
+      } else if (decalage(ici.place, ref.place)) signaler(code, libelle + ' pas a la meme place que sur ' + ref.url, ici);
+      else if (ordreDifferent(ref, nom)) signaler(code, libelle + ' pas dans le meme ordre du code source que sur ' + ref.url, ici);
+    });
+  return anomalies;
+}
+
 async function executerTestsBonus(page) {
   await attendreAntiRobot(page);
   const fenetres = (await fenetresOuvertes(page)).map((adresse) => versFormatPa11y({
@@ -1706,6 +1824,7 @@ async function executerTestsBonus(page) {
     context: '<html>'
   }));
   await page.evaluate(pagePreparer);
+  const navigation = await testerNavigation(page);
   const statiques = await page.evaluate(pageTestsStatiques, {
     liensVagues: LIENS_VAGUES,
     altsSuspects: ALTS_SUSPECTS
@@ -1720,7 +1839,7 @@ async function executerTestsBonus(page) {
   const audit = await page.evaluate(pageTestsAudit);
   const motifs = await page.evaluate(pageTestsMotifs);
   const motifsClavier = await testerMotifsClavier(page);
-  return [...fenetres, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...motifs].map(versFormatPa11y),
+  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...motifs].map(versFormatPa11y),
     ...clavier, ...contrastes, ...reflow, ...espacement, ...motifsClavier];
 }
 
@@ -1729,7 +1848,7 @@ module.exports = {
   requalifierAnomalies,
   // Exportes pour les tests du kit lui-meme.
   _interne: {
-    pagePreparer, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs, pageTestsAudit,
+    pagePreparer, pageNavigation, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs, pageTestsAudit,
     pageTestReflow, pageCandidatsContraste, parcourirAuClavier, testerContrasteSurImage, testerReflow, lirePng,
     LIENS_VAGUES, ALTS_SUSPECTS
   }

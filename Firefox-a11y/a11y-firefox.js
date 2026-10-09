@@ -38,7 +38,13 @@ const URLS = [
   'http://localhost:3000/site-test/piege-blocage.html',
   'http://localhost:3000/site-test/piege-boucle.html',
   'http://localhost:3000/site-test/erreurs-composants.html',
-  'http://localhost:3000/site-test/erreurs-audit.html'
+  'http://localhost:3000/site-test/erreurs-audit.html',
+  'http://127.0.0.1:3000/site-test/navigation/index.html',
+  'http://127.0.0.1:3000/site-test/navigation/page-a.html',
+  'http://127.0.0.1:3000/site-test/navigation/page-b.html',
+  'http://127.0.0.1:3000/site-test/navigation/page-c.html',
+  'http://127.0.0.1:3000/site-test/navigation/page-d.html',
+  'http://127.0.0.1:3000/site-test/navigation/page-e.html'
 ];
 
 if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
