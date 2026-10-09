@@ -22,8 +22,12 @@ accessibilite_chromium:
     - cd Chromium-a11y
     - pa11y-ci --config pa11yci.json || PA11Y_STATUS=$?
     - node tests-bonus-chromium.js || BONUS_STATUS=$?
-    - node rgaa-report.js pa11y-report.json --json rgaa-summary.json
-    - exit ${PA11Y_STATUS:-${BONUS_STATUS:-0}}
+    - node rgaa-report.js pa11y-report.json --json rgaa-summary.json --code || RGAA_STATUS=$?
+    # 1 si pa11y-ci ou les tests bonus tombent en panne ; sinon le verdict du
+    # recapitulatif RGAA, une fois les resultats ecartes retires (comme make test).
+    - if [ "${PA11Y_STATUS:-0}" -ne 0 ] && [ "${PA11Y_STATUS:-0}" -ne 2 ]; then exit "$PA11Y_STATUS"; fi
+    - if [ "${BONUS_STATUS:-0}" -eq 1 ]; then exit 1; fi
+    - exit ${RGAA_STATUS:-0}
   allow_failure: true
 
   artifacts:

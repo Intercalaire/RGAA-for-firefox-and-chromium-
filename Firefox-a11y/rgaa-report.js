@@ -482,6 +482,52 @@ function lireRapport(chemin) {
 /* 7. Regroupement                                                     */
 /* ------------------------------------------------------------------ */
 
+// Un meme element signale pour le meme critere par plusieurs regles (axe et
+// htmlcs, ou un outil et un test bonus) n'est compte qu'une fois. On le
+// reconnait a son selecteur, ou a defaut a un extrait de code identique.
+function fusionnerDoublons(anomalies) {
+  // Les attributs data-kit-* sont poses par les tests bonus pendant le test.
+  const extrait = (a) => String(a.context || '').replace(/ data-kit-[a-z-]+="[^"]*"/g, '')
+    .replace(/\s+/g, ' ').replace(/> </g, '><').trim();
+  // htmlcs coupe ses extraits : "<fieldset><input type="checkbo...</fieldset>".
+  const memeExtrait = (x, y) => {
+    if (!x || !y) return false;
+    const coupeX = x.includes('...');
+    const coupeY = y.includes('...');
+    if (coupeX && coupeY) return x === y;
+    if (coupeX || coupeY) {
+      const [coupe, entier] = coupeX ? [x, y] : [y, x];
+      const debut = coupe.split('...')[0];
+      return debut.length >= 25 && entier.startsWith(debut);
+    }
+    const [court, long] = x.length <= y.length ? [x, y] : [y, x];
+    return court === long || (court.length >= 80 && long.startsWith(court));
+  };
+  const gardees = [];
+  const parPage = new Map();
+  let fusions = 0;
+  anomalies.forEach((a) => {
+    const { critere } = resoudreCritere(a);
+    if (!critere) { gardees.push(a); return; }
+    const cle = a.url + ' ' + critere;
+    const voisines = parPage.get(cle) || [];
+    const autreRegle = (k) => k.code !== a.code && !(k.aussi || []).includes(a.code);
+    const double = voisines.find((k) => autreRegle(k) && a.selector && k.selector === a.selector)
+      || voisines.find((k) => autreRegle(k) && memeExtrait(extrait(k), extrait(a)));
+    if (double) {
+      double.aussi = [...(double.aussi || []), a.code];
+      if ((a.type || 'error') === 'error') double.type = 'error';
+      fusions += 1;
+      return;
+    }
+    const copie = { ...a };
+    voisines.push(copie);
+    parPage.set(cle, voisines);
+    gardees.push(copie);
+  });
+  return { anomalies: gardees, fusions };
+}
+
 function regrouper(anomalies) {
   const parCritere = new Map();
   const nonClassees = [];
@@ -510,6 +556,7 @@ function regrouper(anomalies) {
       selecteur: anomalie.selector,
       contexte: anomalie.context,
       code: anomalie.code,
+      aussi: anomalie.aussi,
       runner: anomalie.runner
     });
   });
@@ -555,7 +602,7 @@ function tronquer(texte, longueur) {
   return propre.length > longueur ? `${propre.slice(0, longueur - 1)}…` : propre;
 }
 
-function afficher(groupes, anomalies, detaille, ecartees = []) {
+function afficher(groupes, anomalies, detaille, ecartees = [], fusions = 0) {
   const c = COULEURS;
   const totalErreurs = anomalies.filter((a) => (a.type || 'error') === 'error').length;
   const totalAutres = anomalies.length - totalErreurs;
@@ -610,6 +657,11 @@ function afficher(groupes, anomalies, detaille, ecartees = []) {
     console.log('');
   }
 
+  if (fusions > 0) {
+    console.log(`${c.gris}Doublons fusionnes (meme element signale par plusieurs regles) : ${fusions}${c.fin}`);
+    console.log('');
+  }
+
   if (ecartees.length > 0) {
     const raisons = new Map();
     ecartees.forEach((a) => raisons.set(a.nonApplicable, (raisons.get(a.nonApplicable) || 0) + 1));
@@ -647,16 +699,17 @@ function main() {
   const { anomalies: toutes } = lireRapport(chemin);
   // Resultats d'outils ecartes apres verification sur la page reelle.
   const ecartees = toutes.filter((a) => a.nonApplicable);
-  const anomalies = toutes.filter((a) => !a.nonApplicable);
+  const { anomalies, fusions } = fusionnerDoublons(toutes.filter((a) => !a.nonApplicable));
   const groupes = regrouper(anomalies);
 
-  afficher(groupes, anomalies, detaille, ecartees);
+  afficher(groupes, anomalies, detaille, ecartees, fusions);
 
   if (sortieJson) {
     const contenu = {
       genereLe: new Date().toISOString(),
       source: chemin,
       totalAnomalies: anomalies.length,
+      doublonsFusionnes: fusions,
       avertissement: 'Traduction WCAG vers RGAA. Ne constitue pas un audit RGAA.',
       thematiques: groupes.thematiques,
       nonClassees: groupes.nonClassees,
