@@ -6,6 +6,8 @@
  *
  * Execute les tests bonus (tests-bonus.js) sous Chromium, sur les pages
  * de pa11yci.json, puis ajoute leurs resultats au rapport pa11y-report.json.
+ * Les erreurs de pa11y non applicables sur la page reelle (element masque,
+ * composant inactif...) y sont aussi requalifiees.
  * A lancer APRES pa11y-ci.
  *
  * Aucune dependance a installer : le script reutilise le Puppeteer et le
@@ -19,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { pathToFileURL } = require('url');
-const { executerTestsBonus } = require('./tests-bonus');
+const { executerTestsBonus, requalifierAnomalies } = require('./tests-bonus');
 
 const CONFIG = './pa11yci.json';
 const RAPPORT = './pa11y-report.json';
@@ -93,6 +95,13 @@ function lireUrls() {
     .filter(Boolean);
 }
 
+// pa11y peut enregistrer la page avec ou sans ".html" ou "/" final.
+function cleDuRapport(rapport, url) {
+  const normaliser = (u) => u.replace(/(\.html|\/)$/, '');
+  if (rapport.results[url]) return url;
+  return Object.keys(rapport.results).find((k) => normaliser(k) === normaliser(url)) || null;
+}
+
 function lireRapport() {
   if (fs.existsSync(RAPPORT)) {
     return JSON.parse(fs.readFileSync(RAPPORT, 'utf8'));
@@ -118,6 +127,8 @@ async function main() {
   let ajouts = 0;
   let erreursAjoutees = 0;
   let echecs = 0;
+  let requalifiees = 0;
+  let erreursRetirees = 0;
 
   console.log(`Tests bonus sous Chromium sur ${urls.length} page(s) :`);
   try {
@@ -128,10 +139,21 @@ async function main() {
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
         await new Promise((r) => setTimeout(r, ATTENTE_MS));
 
+        const cle = cleDuRapport(rapport, url);
+        if (rapport.results[cle]) {
+          const avant = rapport.results[cle];
+          const apres = await requalifierAnomalies(page, avant);
+          const changees = apres.filter((a, i) => a !== avant[i]).length;
+          requalifiees += changees;
+          erreursRetirees += avant.filter((a, i) => a.type === 'error' && apres[i].type !== 'error').length;
+          rapport.results[cle] = apres;
+        }
+
         const anomalies = await executerTestsBonus(page);
         const erreurs = anomalies.filter((a) => a.type === 'error').length;
 
-        rapport.results[url] = [...(rapport.results[url] || []), ...anomalies];
+        const cleBonus = cleDuRapport(rapport, url) || url;
+        rapport.results[cleBonus] = [...(rapport.results[cleBonus] || []), ...anomalies];
         ajouts += anomalies.length;
         erreursAjoutees += erreurs;
         console.log(` > ${url} - ${erreurs} erreur(s), ${anomalies.length - erreurs} a verifier`);
@@ -146,9 +168,12 @@ async function main() {
     await navigateur.close();
   }
 
-  rapport.errors = (rapport.errors || 0) + erreursAjoutees;
+  rapport.errors = Math.max(0, (rapport.errors || 0) - erreursRetirees) + erreursAjoutees;
   fs.writeFileSync(RAPPORT, JSON.stringify(rapport, null, 2), 'utf8');
   console.log(`${ajouts} anomalie(s) ajoutee(s) a ${RAPPORT}`);
+  if (requalifiees > 0) {
+    console.log(`${requalifiees} resultat(s) de pa11y requalifie(s) apres verification sur la page (voir le recapitulatif RGAA)`);
+  }
 
   // Memes codes que pa11y-ci : 1 = panne, 2 = erreurs trouvees, 0 = rien.
   if (echecs > 0) process.exit(1);

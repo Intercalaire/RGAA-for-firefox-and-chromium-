@@ -201,6 +201,16 @@ const AXE_VERS_RGAA = {
   'kit-motif-aria': '7.1',
   'kit-motif-clavier': '7.3',
   'kit-clavier-composant': '7.3',
+  'kit-intitule-lien': '6.1',
+  'kit-intitule-composant': '7.1',
+  'kit-intitule-bouton': '11.9',
+  'kit-intitule-champ': '11.2',
+  'kit-optgroup': '11.8',
+  'kit-etiquette-accolee': '11.4',
+  'kit-media-controles': '4.11',
+  'kit-mouvement': '13.8',
+  'kit-nouvelle-fenetre': '13.2',
+  'kit-espacement': '10.12',
 
   // 13. Consultation
   'meta-refresh': '13.1',
@@ -283,6 +293,7 @@ const LIBELLES_CRITERES = {
   '4.3': 'Chaque media temporel pre-enregistre a-t-il des sous-titres synchronises ?',
   '5.1': 'Chaque tableau de donnees complexe a-t-il un resume ?',
   '4.5': 'Chaque media temporel a-t-il, si necessaire, une audiodescription synchronisee ?',
+  '4.11': 'La consultation de chaque media temporel est-elle controlable par le clavier et la souris ?',
   '4.10': 'Chaque son declenche automatiquement est-il controlable ?',
   '5.3': 'Un tableau de mise en forme reste-t-il comprehensible en linearisant ?',
   '5.4': 'Chaque tableau de donnees a-t-il un titre ?',
@@ -318,8 +329,10 @@ const LIBELLES_CRITERES = {
   '11.1': 'Chaque champ de formulaire a-t-il une etiquette ?',
   '11.2': 'Chaque etiquette associee a un champ est-elle pertinente ?',
   '11.3': 'Les etiquettes des champs de meme fonction sont-elles coherentes ?',
+  '11.4': 'Chaque etiquette de champ et son champ sont-ils accoles ?',
   '11.5': 'Les champs de meme nature sont-ils regroupes, si necessaire ?',
   '11.6': 'Chaque regroupement de champs a-t-il une legende ?',
+  '11.8': 'Les items de meme nature d\'une liste de choix sont-ils regroupes de maniere pertinente ?',
   '11.9': 'L\'intitule de chaque bouton est-il pertinent ?',
   '11.10': 'Le controle de saisie est-il utilise de maniere pertinente ?',
   '11.13': 'La saisie peut-elle etre completee automatiquement ?',
@@ -332,6 +345,7 @@ const LIBELLES_CRITERES = {
   '12.9': 'La navigation ne contient-elle aucun piege au clavier ?',
   '12.10': 'Les raccourcis clavier sont-ils controlables ?',
   '13.1': 'L\'utilisateur garde-t-il le controle des limites de temps ?',
+  '13.2': 'L\'ouverture d\'une nouvelle fenetre est-elle declenchee par une action de l\'utilisateur ?',
   '13.3': 'Chaque document bureautique en telechargement a-t-il, si necessaire, une version accessible ?',
   '13.5': 'Chaque contenu cryptique (art ASCII, emoticone...) a-t-il une alternative ?',
   '13.8': 'Les contenus en mouvement sont-ils controlables ?'
@@ -357,7 +371,7 @@ const TECHNIQUES_VERS_RGAA = {
   F92: '5.8',   // role presentation sur un element qui garde une semantique (tableau)
   F68: '11.1',  // champ de formulaire sans etiquette
   H65: '11.1',  // title sur un champ sans label
-  H32: '11.9',  // bouton de soumission
+  H32: '7.4',   // formulaire sans bouton d'envoi : changement de contexte a la saisie
   H30: '6.2',   // intitule de lien
   H25: '8.5',   // titre de page
   H57: '8.3',   // langue par defaut
@@ -540,7 +554,7 @@ function tronquer(texte, longueur) {
   return propre.length > longueur ? `${propre.slice(0, longueur - 1)}…` : propre;
 }
 
-function afficher(groupes, anomalies, detaille) {
+function afficher(groupes, anomalies, detaille, ecartees = []) {
   const c = COULEURS;
   const totalErreurs = anomalies.filter((a) => (a.type || 'error') === 'error').length;
   const totalAutres = anomalies.length - totalErreurs;
@@ -595,6 +609,14 @@ function afficher(groupes, anomalies, detaille) {
     console.log('');
   }
 
+  if (ecartees.length > 0) {
+    const raisons = new Map();
+    ecartees.forEach((a) => raisons.set(a.nonApplicable, (raisons.get(a.nonApplicable) || 0) + 1));
+    console.log(`${c.gris}Ecartees apres verification sur la page (non applicables) : ${ecartees.length}${c.fin}`);
+    [...raisons.entries()].forEach(([raison, n]) => console.log(`  ${c.gris}- ${raison} (x${n})${c.fin}`));
+    console.log('');
+  }
+
   console.log('='.repeat(60));
   console.log(`${c.jaune}Rappel : ce recapitulatif traduit des regles WCAG vers la${c.fin}`);
   console.log(`${c.jaune}nomenclature RGAA. Il ne constitue pas un audit : les outils${c.fin}`);
@@ -621,10 +643,13 @@ function main() {
   });
   const chemin = path.resolve(positionnels[0] || './a11y-report.json');
 
-  const { anomalies } = lireRapport(chemin);
+  const { anomalies: toutes } = lireRapport(chemin);
+  // Resultats d'outils ecartes apres verification sur la page reelle.
+  const ecartees = toutes.filter((a) => a.nonApplicable);
+  const anomalies = toutes.filter((a) => !a.nonApplicable);
   const groupes = regrouper(anomalies);
 
-  afficher(groupes, anomalies, detaille);
+  afficher(groupes, anomalies, detaille, ecartees);
 
   if (sortieJson) {
     const contenu = {
@@ -633,7 +658,10 @@ function main() {
       totalAnomalies: anomalies.length,
       avertissement: 'Traduction WCAG vers RGAA. Ne constitue pas un audit RGAA.',
       thematiques: groupes.thematiques,
-      nonClassees: groupes.nonClassees
+      nonClassees: groupes.nonClassees,
+      nonApplicables: ecartees.map((a) => ({
+        url: a.url, raison: a.nonApplicable, code: a.code, message: a.message, selecteur: a.selector
+      }))
     };
     fs.writeFileSync(sortieJson, JSON.stringify(contenu, null, 2), 'utf8');
     console.log(`Recapitulatif ecrit dans ${sortieJson}`);

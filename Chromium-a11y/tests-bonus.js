@@ -32,6 +32,7 @@ const ALT_MAX = 120;
 
 // Nombre maximal de textes sur image mesures par page (3.2), une capture chacun.
 const MAX_CONTRASTES = 30;
+const MAX_MESURES_CAPTURE = 60;
 
 // Nombre maximal de composants de chaque type testes au clavier par page (7.3).
 const MAX_MOTIFS = 10;
@@ -612,12 +613,26 @@ function pageTestsStructure() {
   // 11.10, 11.13
   const PERSONNEL = /\b(nom|prenom|name|firstname|lastname|surname|family name|given name|username|e ?mail|courriel|mel|tel|telephone|phone|mobile|portable|adresse|address|rue|street|code postal|postal|zip|cp|ville|city|commune|pays|country|naissance|birthday|bday|organisation|entreprise|societe|company|organization)\b/;
   const obligatoiresGlobal = /tous les champs sont obligatoires|sauf mention contraire/.test(normal(document.body.innerText));
+  // Cas particulier 11.10 : formulaire a un seul champ, ou qui signale ses champs facultatifs.
+  const casParticulier1110 = (champ) => {
+    const formulaire = champ.closest('form');
+    if (!formulaire) return false;
+    const champs = new Set();
+    formulaire.querySelectorAll('input, select, textarea').forEach((c) => {
+      const t = (c.getAttribute('type') || 'text').toLowerCase();
+      if (masque(c) || ['hidden', 'submit', 'button', 'reset', 'image'].includes(t)) return;
+      champs.add(t === 'radio' && c.name ? 'radio:' + c.name : c);
+    });
+    if (champs.size <= 1) return true;
+    return Array.from(formulaire.querySelectorAll('label, legend'))
+      .some((e) => /facultati|optionnel|optional/.test(normal(e.textContent)));
+  };
   document.querySelectorAll('input, select, textarea').forEach((champ) => {
     if (masque(champ) || champ.disabled) return;
     const type = (champ.getAttribute('type') || 'text').toLowerCase();
     if (['hidden', 'submit', 'button', 'reset', 'image', 'file', 'range', 'color', 'search'].includes(type)) return;
     const nom = nomAccessible(champ);
-    if ((champ.required || champ.getAttribute('aria-required') === 'true') && !obligatoiresGlobal) {
+    if ((champ.required || champ.getAttribute('aria-required') === 'true') && !obligatoiresGlobal && !casParticulier1110(champ)) {
       const groupe = champ.closest('fieldset');
       const legende = groupe && groupe.querySelector(':scope > legend');
       const aide = (champ.getAttribute('aria-describedby') || '').split(/\s+/)
@@ -663,6 +678,160 @@ function pageTestsStructure() {
 
 // Contraste des composants d'interface (3.3) : contour des champs de saisie
 // et icones des boutons ou liens sans texte, au moins 3:1 avec le fond.
+function pageTestsAudit() {
+  const anomalies = [];
+  const ajouter = (code, type, message, el) => anomalies.push({
+    code, type, message,
+    selector: window.__kitSelecteur(el),
+    context: el.outerHTML.slice(0, 250)
+  });
+  const masque = (el) => el.closest('[aria-hidden="true"]') || el.getClientRects().length === 0
+    || getComputedStyle(el).visibility === 'hidden';
+  const texte = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  // Ponctuation et majuscules ignorees (cas particuliers 6.1.5, 7.1.3, 11.2.5).
+  const comparable = (t) => ' ' + (t || '').toLowerCase().normalize('NFC')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim() + ' ';
+  const cache = (el) => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return r.width <= 1 || r.height <= 1 || s.clip === 'rect(0px, 0px, 0px, 0px)' || s.clipPath === 'inset(50%)';
+  };
+  const texteVisible = (el) => {
+    let resultat = '';
+    const marcheur = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = marcheur.nextNode(); n; n = marcheur.nextNode()) {
+      const parent = n.parentElement;
+      if (parent && !parent.closest('[aria-hidden="true"]') && !cache(parent)
+        && getComputedStyle(parent).visibility !== 'hidden') resultat += ' ' + n.textContent;
+    }
+    return texte(resultat);
+  };
+  const parIds = (valeur) => (valeur || '').split(/\s+/).filter(Boolean)
+    .map((id) => document.getElementById(id)).filter(Boolean).map((e) => e.textContent).join(' ');
+
+  // 6.1.5, 7.1.3, 11.9.2 : le nom accessible contient l'intitule visible.
+  const interactifs = 'a[href], button, input[type="submit"], input[type="button"], input[type="reset"], '
+    + '[role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="checkbox"], [role="switch"], [role="radio"]';
+  document.querySelectorAll(interactifs).forEach((el) => {
+    if (masque(el)) return;
+    const visible = el.tagName === 'INPUT' ? texte(el.value) : texteVisible(el);
+    // Cas particulier : intitule servant de symbole (aucune lettre ni chiffre, ou un seul caractere).
+    if (comparable(visible).trim().length < 2) return;
+    const lien = el.matches('a[href], [role="link"]');
+    const formulaire = !lien && el.closest('form');
+    const labelledby = texte(parIds(el.getAttribute('aria-labelledby')));
+    const label = texte(el.getAttribute('aria-label'));
+    // 11.9.2 : chaque attribut present est verifie ; 6.1.5 et 7.1.3 : le nom accessible.
+    const valeurs = formulaire
+      ? [['aria-labelledby', labelledby], ['aria-label', label], ['title', texte(el.getAttribute('title'))]]
+      : [['Le nom accessible', labelledby || label]];
+    valeurs.forEach(([source, valeur]) => {
+      if (!valeur || comparable(valeur).includes(comparable(visible))) return;
+      ajouter(lien ? 'kit-intitule-lien' : formulaire ? 'kit-intitule-bouton' : 'kit-intitule-composant', 'error',
+        source + ' "' + valeur.slice(0, 80) + '" ne contient pas l\'intitule visible "' + visible.slice(0, 80) + '"', el);
+    });
+  });
+
+  // 11.2.5 : aria-label, aria-labelledby et title d'un champ contiennent l'intitule visible (son label).
+  document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]), select, textarea')
+    .forEach((champ) => {
+      if (masque(champ) || !champ.labels || champ.labels.length === 0) return;
+      const visible = texte(Array.from(champ.labels).map(texteVisible).join(' '));
+      if (comparable(visible).trim().length < 2) return;
+      [['aria-labelledby', texte(parIds(champ.getAttribute('aria-labelledby')))],
+        ['aria-label', texte(champ.getAttribute('aria-label'))],
+        ['title', texte(champ.getAttribute('title'))]].forEach(([attribut, valeur]) => {
+        if (valeur && !comparable(valeur).includes(comparable(visible))) {
+          ajouter('kit-intitule-champ', 'error', attribut + ' "' + valeur.slice(0, 80)
+            + '" ne contient pas l\'intitule visible "' + visible.slice(0, 80) + '"', champ);
+        }
+      });
+    });
+
+  // 11.8.2
+  document.querySelectorAll('select optgroup').forEach((groupe) => {
+    if (!texte(groupe.getAttribute('label'))) {
+      ajouter('kit-optgroup', 'error', 'Groupe d\'options (optgroup) sans attribut label', groupe);
+    }
+  });
+
+  // 11.4.2, 11.4.3 : etiquette visuellement accolee au champ.
+  document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), select, textarea')
+    .forEach((champ) => {
+      if (masque(champ) || !champ.labels || champ.labels.length !== 1) return;
+      const label = champ.labels[0];
+      if (label.contains(champ) || masque(label)) return;
+      const s = getComputedStyle(champ);
+      const r = champ.getBoundingClientRect();
+      const l = label.getBoundingClientRect();
+      const coche = champ.type === 'checkbox' || champ.type === 'radio';
+      // Cas particulier : case ou bouton radio non presente visuellement comme tel.
+      if (coche && (parseFloat(s.opacity) === 0 || r.width < 4 || r.height < 4)) return;
+      const chevauche = !(l.right < r.left || l.left > r.right || l.bottom < r.top || l.top > r.bottom);
+      if (chevauche) return;
+      const rtl = getComputedStyle(label).direction === 'rtl';
+      const tolerance = Math.max(24, 2 * parseFloat(getComputedStyle(label).fontSize));
+      const memeLigne = l.bottom > r.top && l.top < r.bottom;
+      const memeColonne = l.right > r.left && l.left < r.right;
+      const dessus = memeColonne && l.bottom <= r.top && r.top - l.bottom <= tolerance;
+      const dessous = memeColonne && l.top >= r.bottom && l.top - r.bottom <= tolerance;
+      const gauche = memeLigne && l.right <= r.left && r.left - l.right <= tolerance;
+      const droite = memeLigne && l.left >= r.right && l.left - r.right <= tolerance;
+      const ok = coche ? dessous || (rtl ? gauche : droite) : dessus || (rtl ? droite : gauche);
+      if (!ok) {
+        ajouter('kit-etiquette-accolee', 'warning', coche
+          ? 'Etiquette pas accolee immediatement a droite ou au-dessous de la case'
+          : 'Etiquette pas accolee immediatement au-dessus ou a gauche du champ', champ);
+      }
+    });
+
+  // 4.11.1 : chaque media temporel a des fonctionnalites de controle.
+  const CONTROLE = /lecture|lire|play|pause|stop|arr[eê]t/i;
+  const controleProche = (media) => {
+    for (let p = media.parentElement, i = 0; p && i < 3; p = p.parentElement, i++) {
+      const boutons = Array.from(p.querySelectorAll('button, [role="button"], input[type="button"]'));
+      if (boutons.some((b) => CONTROLE.test([b.textContent, b.getAttribute('aria-label'), b.title, b.value].join(' ')))) return true;
+    }
+    return false;
+  };
+  document.querySelectorAll('video, audio').forEach((media) => {
+    if (media.controls || (media.tagName === 'VIDEO' && masque(media))) return;
+    if (media.autoplay && media.muted && media.loop) return;
+    if (!controleProche(media)) {
+      ajouter('kit-media-controles', 'error', 'Media (' + media.tagName.toLowerCase()
+        + ') sans fonctionnalites de controle : ni attribut controls, ni bouton lecture / pause', media);
+    }
+  });
+
+  // 13.8.1 : mouvement automatique de plus de 5 secondes, sans moyen de l'arreter.
+  const PAUSE = /pause|arr[eê]t|stop|animation|mouvement/i;
+  const pauseDansPage = Array.from(document.querySelectorAll('button, [role="button"], a[href], input[type="checkbox"]'))
+    .some((b) => !masque(b) && PAUSE.test([b.textContent, b.getAttribute('aria-label'), b.title,
+      b.labels ? Array.from(b.labels).map((x) => x.textContent).join(' ') : ''].join(' ')));
+  if (!pauseDansPage) {
+    const vus = new Set();
+    const animations = document.getAnimations ? document.getAnimations() : [];
+    animations.forEach((a) => {
+      const cible = a.effect && a.effect.target;
+      if (!cible || !(cible instanceof Element) || vus.has(cible) || a.playState !== 'running') return;
+      const duree = a.effect.getComputedTiming().endTime;
+      if (duree <= 5000 || masque(cible) || cible.closest('[role="progressbar"], [aria-busy="true"]')) return;
+      vus.add(cible);
+      if (vus.size <= 5) {
+        ajouter('kit-mouvement', 'warning', 'Animation de plus de 5 secondes (' + (duree === Infinity ? 'infinie' : Math.round(duree / 1000) + ' s')
+          + ') sans bouton pour l\'arreter dans la page', cible);
+      }
+    });
+    document.querySelectorAll('video[autoplay]').forEach((video) => {
+      if (!masque(video) && !video.controls && (video.loop || video.duration > 5) && !controleProche(video)) {
+        ajouter('kit-mouvement', 'warning', 'Video en lecture automatique de plus de 5 secondes sans bouton pause', video);
+      }
+    });
+  }
+
+  return anomalies;
+}
+
 function pageTestsMotifs() {
   const anomalies = [];
   const ajouter = (code, type, message, el) => anomalies.push({
@@ -1187,6 +1356,91 @@ async function testerMotifsClavier(page) {
   return anomalies;
 }
 
+// 13.2.1 : fenetre ouverte par la page sans action de l'utilisateur
+// (appele avant toute interaction). Playwright : opener() ; Puppeteer : target().opener().
+async function fenetresOuvertes(page) {
+  try {
+    if (typeof page.opener === 'function' && typeof page.context === 'function') {
+      const ouvertes = [];
+      for (const autre of page.context().pages()) {
+        if (autre !== page && (await autre.opener()) === page) {
+          ouvertes.push(autre.url());
+          await autre.close();
+        }
+      }
+      return ouvertes;
+    }
+    if (typeof page.browser === 'function') {
+      const cible = page.target();
+      const ouvertes = [];
+      for (const autre of await page.browser().pages()) {
+        if (autre !== page && autre.target().opener() === cible) {
+          ouvertes.push(autre.url());
+          await autre.close();
+        }
+      }
+      return ouvertes;
+    }
+  } catch (erreur) {
+    return [];
+  }
+  return [];
+}
+
+// 10.12.1 : espacements officiels du RGAA, puis texte devenu coupe.
+const STYLE_ESPACEMENT = '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; '
+  + 'word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }';
+
+function pageTexteCoupe(etape) {
+  if (etape === 'avant') {
+    let n = 0;
+    document.querySelectorAll('body *').forEach((el) => {
+      if (el.closest('canvas, video, svg, [aria-hidden="true"]') || !el.textContent.trim()) return;
+      const s = getComputedStyle(el);
+      if (!/hidden|clip/.test(s.overflowX + s.overflowY)) return;
+      if ((s.webkitLineClamp && s.webkitLineClamp !== 'none') || s.textOverflow === 'ellipsis') return;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 2 || r.height <= 2 || s.clip === 'rect(0px, 0px, 0px, 0px)') return;
+      el.setAttribute('data-kit-espacement', String(n++));
+    });
+  }
+  const coupes = {};
+  document.querySelectorAll('[data-kit-espacement]').forEach((el) => {
+    coupes[el.getAttribute('data-kit-espacement')] = el.scrollHeight > el.clientHeight + 2
+      || el.scrollWidth > el.clientWidth + 2;
+  });
+  if (etape === 'apres') {
+    const resultat = Object.keys(coupes).filter((id) => coupes[id]).map((id) => {
+      const el = document.querySelector('[data-kit-espacement="' + id + '"]');
+      return { id, selecteur: window.__kitSelecteur(el), contexte: el.outerHTML.slice(0, 250) };
+    });
+    const style = document.getElementById('kit-espacement');
+    if (style) style.remove();
+    document.querySelectorAll('[data-kit-espacement]').forEach((el) => el.removeAttribute('data-kit-espacement'));
+    return resultat;
+  }
+  return coupes;
+}
+
+async function testerEspacement(page) {
+  const avant = await page.evaluate(pageTexteCoupe, 'avant');
+  await page.evaluate(({ css }) => {
+    const style = document.createElement('style');
+    style.id = 'kit-espacement';
+    style.textContent = css;
+    document.head.appendChild(style);
+    return new Promise((r) => setTimeout(r, 300));
+  }, { css: STYLE_ESPACEMENT });
+  const apres = await page.evaluate(pageTexteCoupe, 'apres');
+  return apres.filter((c) => !avant[c.id]).slice(0, 10).map((c) => versFormatPa11y({
+    code: 'kit-espacement',
+    type: 'error',
+    message: 'Texte coupe quand les espacements du texte sont augmentes (interligne 1,5, lettres 0,12, mots 0,16, paragraphes 2)',
+    selector: c.selecteur,
+    context: c.contexte
+  }));
+}
+
 async function testerReflow(page) {
   const avant = await changerLargeur(page, { width: LARGEUR_REFLOW, height: 800 });
   try {
@@ -1196,7 +1450,261 @@ async function testerReflow(page) {
   }
 }
 
+function pageRequalifier(liste) {
+  const trouver = (selecteur) => {
+    try { return selecteur ? document.querySelector(selecteur) : null; } catch (e) { return null; }
+  };
+  const masque = (el) => el.getClientRects().length === 0 || getComputedStyle(el).visibility === 'hidden'
+    || el.closest('[aria-hidden="true"], [hidden], [inert]');
+  const inactif = (el) => el.closest(':disabled, [aria-disabled="true"]')
+    || (el.closest('label') && el.closest('label').control && el.closest('label').control.disabled)
+    || (el.tagName === 'A' && !el.hasAttribute('href') && !el.hasAttribute('tabindex') && !el.hasAttribute('role'));
+  const K = window.__kitCouleurs;
+  // 3.2 : contraste qu'axe n'a pas pu calculer, mesure si aucun pseudo-element ne peint de fond
+  // et si rien ne recouvre le texte.
+  // Premiere ligne du texte : le rectangle englobant d'un texte sur plusieurs lignes deborde sur ses voisins.
+  const rectTexte = (el) => {
+    const noeud = Array.from(el.childNodes).find((n) => n.nodeType === 3 && n.textContent.trim());
+    let rects;
+    if (noeud) {
+      const plage = document.createRange();
+      plage.selectNodeContents(noeud);
+      rects = Array.from(plage.getClientRects());
+    } else rects = Array.from(el.getClientRects());
+    return rects.find((r) => r.width > 0 && r.height > 0) || el.getBoundingClientRect();
+  };
+  // Boite d'un pseudo-element positionne, ou null si on ne peut pas la calculer.
+  const boitePseudo = (e, ps) => {
+    let base;
+    if (ps.position === 'fixed') base = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    else {
+      if (getComputedStyle(e).position === 'static') return null;
+      const r = e.getBoundingClientRect();
+      const s = getComputedStyle(e);
+      base = { left: r.left + parseFloat(s.borderLeftWidth), top: r.top + parseFloat(s.borderTopWidth),
+        right: r.right - parseFloat(s.borderRightWidth), bottom: r.bottom - parseFloat(s.borderBottomWidth) };
+    }
+    const px = (v) => (/px$/.test(v) ? parseFloat(v) : null);
+    const [l, t, ri, bo, w, h] = [ps.left, ps.top, ps.right, ps.bottom, ps.width, ps.height].map(px);
+    const largeur = w !== null ? w : (l !== null && ri !== null ? base.right - base.left - l - ri : null);
+    const hauteur = h !== null ? h : (t !== null && bo !== null ? base.bottom - base.top - t - bo : null);
+    if (largeur === null || hauteur === null) return null;
+    const gauche = l !== null ? base.left + l : (ri !== null ? base.right - ri - largeur : null);
+    const haut = t !== null ? base.top + t : (bo !== null ? base.bottom - bo - hauteur : null);
+    if (gauche === null || haut === null || /matrix|rotate|scale|translate/.test(ps.transform)) return null;
+    return { left: gauche, top: haut, right: gauche + largeur, bottom: haut + hauteur };
+  };
+  const mesurer = (el) => {
+    const r = rectTexte(el);
+    if (r.width === 0 || r.height === 0) return { bloque: 'texte sans dimension' };
+    el.scrollIntoView({ block: 'center', inline: 'nearest' });
+    const t = rectTexte(el);
+    // Un pseudo-element non positionne se place a cote du texte, jamais dessous.
+    // Un pseudo-element positionne ne compte que s'il est visible et touche le texte.
+    const voiles = [];
+    const porteurs = [];
+    let boitesInconnues = false;
+    let ordreInconnu = false;
+    let imagesDessous = false;
+    for (let e = el; e; e = e.parentElement) {
+      for (const p of ['::before', '::after']) {
+        const ps = getComputedStyle(e, p);
+        if (!ps.content || ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') continue;
+        if (!/absolute|fixed/.test(ps.position)) continue;
+        porteurs.push(e);
+        if (ps.visibility === 'hidden' || parseFloat(ps.opacity) === 0) continue;
+        const boite = boitePseudo(e, ps);
+        if (boite && (boite.right - boite.left <= 0 || boite.bottom - boite.top <= 0
+          || boite.right <= t.left || boite.left >= t.right || boite.bottom <= t.top || boite.top >= t.bottom)) continue;
+        if (ps.backgroundImage !== 'none') { imagesDessous = true; continue; }
+        const c = K.lire(ps.backgroundColor);
+        if (!c) return { bloque: 'couleur illisible' };
+        if (c[3] > 0) {
+          voiles.push(parseFloat(ps.opacity) < 1 ? [c[0], c[1], c[2], c[3] * parseFloat(ps.opacity)] : c);
+          if (!boite) boitesInconnues = true;
+          if (ps.pointerEvents === 'none' && !(parseInt(ps.zIndex, 10) < 0)) ordreInconnu = true;
+        }
+      }
+      const c = K.lire(getComputedStyle(e).backgroundColor);
+      if (c && c[3] >= 1) break;
+    }
+    if (voiles.length > 3) return { bloque: 'trop de voiles (pseudo-elements)' };
+    // Pile d'affichage au centre du texte : ce qui est au-dessus du texte doit etre transparent,
+    // sauf un porteur de voile, dont le pseudo-element passe alors par-dessus.
+    const pile = document.elementsFromPoint(t.left + t.width / 2, t.top + t.height / 2);
+    const rang = pile.findIndex((x) => x === el || el.contains(x));
+    if (rang < 0) return { bloque: 'texte recouvert par un autre element' };
+    let voileDessus = false;
+    for (const x of pile.slice(0, rang)) {
+      if (porteurs.includes(x)) { voileDessus = true; continue; }
+      const sx = getComputedStyle(x);
+      const cx = K.lire(sx.backgroundColor);
+      const pseudoPeint = ['::before', '::after'].some((p) => {
+        const ps = getComputedStyle(x, p);
+        return ps.content && ps.content !== 'none' && ps.content !== 'normal'
+          && (ps.backgroundImage !== 'none' || (K.lire(ps.backgroundColor) || [0, 0, 0, 1])[3] > 0);
+      });
+      if (!cx || cx[3] > 0 || sx.backgroundImage !== 'none' || pseudoPeint || x.matches('img, svg, video, canvas, iframe, input, select, textarea')) {
+        return { bloque: 'texte recouvert par un autre element (' + window.__kitSelecteur(x) + ')' };
+      }
+    }
+    const s = getComputedStyle(el);
+    const fond = K.fond(el);
+    const texte = K.lire(s.color);
+    const taille = parseFloat(s.fontSize);
+    const grand = taille >= 24 || (taille >= 18.66 && Number(s.fontWeight) >= 700);
+    const seuil = grand ? 3 : 4.5;
+    if (!texte) return { bloque: 'couleur illisible' };
+    if (parseFloat(s.opacity) < 1) return { bloque: 'element semi-transparent' };
+    if (!fond || imagesDessous) {
+      return texte[3] >= 1 ? { capture: true, couleur: texte.slice(0, 3), seuil }
+        : { bloque: 'image ou degrade en arriere-plan, texte semi-transparent' };
+    }
+    const plein = texte[3] < 1 ? K.melanger(texte, fond) : texte;
+    // Voile : sous le texte si la pile d'affichage le montre ; absent possible si sa boite est inconnue ;
+    // par-dessus seulement si la pile le montre ou si on ne peut pas le savoir.
+    const voiler = (c) => voiles.reduceRight((res, v) => K.melanger(v, res), c);
+    const ratios = [K.ratio(plein, voiler(fond))];
+    if (!voiles.length || boitesInconnues) ratios.push(K.ratio(plein, fond));
+    if (voiles.length && (voileDessus || ordreInconnu)) ratios.push(K.ratio(voiler(plein), voiler(fond)));
+    const arrondi = (v) => Math.round(v * 100) / 100;
+    return { min: arrondi(Math.min(...ratios)), max: arrondi(Math.max(...ratios)), seuil };
+  };
+  let captures = 0;
+  const resultat = liste.map(({ code, message, selector, runner, type }) => {
+    const htmlcs = runner === 'htmlcs' || /^WCAG2/.test(code);
+    const el = trouver(selector);
+    if (type !== 'error') {
+      if (code !== 'color-contrast' || !el) return null;
+      if (inactif(el)) return { nonApplicable: 'composant inactif' };
+      const m = mesurer(el);
+      if (m.bloque) return { message: message + ' (non mesurable par le kit : ' + m.bloque + ')' };
+      if (m.capture) {
+        el.setAttribute('data-kit-mesure', String(captures++));
+        return { capture: Number(el.getAttribute('data-kit-mesure')), couleur: m.couleur, seuil: m.seuil };
+      }
+      if (m.min >= m.seuil) return { nonApplicable: 'contraste suffisant, mesure par le kit' };
+      if (m.max < m.seuil) {
+        return { type: 'error', message: 'Contraste insuffisant mesure par le kit : ' + m.max + ':1 au mieux, il faut ' + m.seuil + ':1' };
+      }
+      return { message: 'Contraste entre ' + m.min + ':1 et ' + m.max + ':1 selon la position d\'un voile (pseudo-element), il faut ' + m.seuil + ':1' };
+    }
+    if (htmlcs && /\.H32(\.|,|$)/.test(code)) return { type: 'warning' };
+    if (!el) return null;
+    // 3.2 : texte d'un element d'interface sur lequel aucune action n'est possible.
+    if (/color-contrast|1_4_3|1_4_6/.test(code) && inactif(el)) return { nonApplicable: 'composant inactif' };
+    if (!htmlcs || el.closest('head') || el === document.documentElement || el === document.body) return null;
+    // 5.8.1 : seuls ces elements et attributs sont interdits dans un tableau de mise en forme.
+    if (/F92/.test(code) && el.tagName === 'TABLE') {
+      const propres = Array.from(el.querySelectorAll('caption, th, thead, tfoot, [role="rowheader"], [role="columnheader"], td[scope], td[headers], td[axis]'))
+        .filter((x) => x.closest('table') === el);
+      if (propres.length === 0 && !(el.getAttribute('summary') || '').trim()) {
+        return { nonApplicable: 'tableau de mise en forme conforme au test 5.8.1' };
+      }
+      return null;
+    }
+    if (el.tagName === 'IFRAME' && masque(el)) {
+      return { nonApplicable: 'cadre technique masque' };
+    }
+    if (masque(el)) {
+      return { type: 'warning', message: 'Element masque au chargement, a verifier une fois affiche : ' + message };
+    }
+    const ancre = /NoSuchID/.test(code) && /"([^"]+)"/.exec(message || '');
+    if (ancre && (document.getElementById(ancre[1]) || document.getElementsByName(ancre[1]).length)) {
+      return { nonApplicable: 'cible presente apres chargement' };
+    }
+    return null;
+  });
+  window.scrollTo(0, 0);
+  return resultat;
+}
+
+// 3.2 : texte sur image ou degrade, mesure sur une capture de l'element, texte masque.
+async function mesurerSurCapture(page, verdicts) {
+  const aMesurer = verdicts.map((v, i) => [v, i]).filter(([v]) => v && v.capture !== undefined);
+  if (aMesurer.length === 0) return;
+  await page.evaluate(pageMasquerTextes, true);
+  try {
+    for (const [n, [v, i]] of aMesurer.entries()) {
+      let verdict = null;
+      if (n < MAX_MESURES_CAPTURE) {
+        try {
+          const zone = await page.$('[data-kit-mesure="' + v.capture + '"]');
+          const image = zone && lirePng(await zone.screenshot({ timeout: 5000 }));
+          if (image) {
+            const ratios = [];
+            const pas = Math.max(1, Math.floor(image.px.length / image.canaux / 5000));
+            for (let k = 0; k < image.px.length; k += image.canaux * pas) {
+              const a = image.canaux === 4 ? image.px[k + 3] / 255 : 1;
+              ratios.push(ratioContraste(v.couleur, [0, 1, 2].map((c) => image.px[k + c] * a + 255 * (1 - a))));
+            }
+            ratios.sort((x, y) => x - y);
+            const pire = ratios[Math.floor(ratios.length * 0.05)];
+            const meilleur = ratios[Math.floor(ratios.length * 0.95)];
+            if (pire >= v.seuil) verdict = { nonApplicable: 'contraste suffisant, mesure sur capture par le kit' };
+            else if (meilleur < v.seuil) {
+              verdict = { type: 'error', message: 'Texte sur image ou degrade : contraste de ' + meilleur.toFixed(2)
+                + ':1 au mieux, mesure sur capture, il faut ' + v.seuil + ':1' };
+            } else {
+              verdict = { message: 'Texte sur image ou degrade : contraste entre ' + pire.toFixed(2) + ':1 et '
+                + meilleur.toFixed(2) + ':1 selon la zone du fond, mesure sur capture, il faut ' + v.seuil + ':1' };
+            }
+          }
+        } catch (erreur) { /* capture impossible : on laisse a verifier */ }
+      }
+      verdicts[i] = verdict;
+    }
+  } finally {
+    await page.evaluate(pageMasquerTextes, false);
+    await page.evaluate(() => document.querySelectorAll('[data-kit-mesure]').forEach((e) => e.removeAttribute('data-kit-mesure')));
+  }
+}
+
+async function requalifierAnomalies(page, anomalies) {
+  const candidates = anomalies.filter((a) => !String(a.code || '').startsWith('kit-')
+    && (a.type === 'error' || a.code === 'color-contrast'));
+  if (candidates.length === 0) return anomalies;
+  try { await attendreAntiRobot(page); } catch (e) { return anomalies; }
+  await page.evaluate(pagePreparer);
+  const verdicts = await page.evaluate(pageRequalifier, candidates.map((a) => ({
+    code: String(a.code || ''), message: a.message, selector: a.selector, runner: a.runner, type: a.type
+  })));
+  await mesurerSurCapture(page, verdicts);
+  const parAnomalie = new Map(candidates.map((a, i) => [a, verdicts[i]]));
+  return anomalies.map((a) => {
+    const v = parAnomalie.get(a);
+    if (!v) return a;
+    if (v.nonApplicable) return { ...a, type: 'notice', nonApplicable: v.nonApplicable };
+    return { ...a, ...v };
+  });
+}
+
+function pageAntiRobot() {
+  if (document.querySelector('#challenge-form, #cf-challenge-running, #challenge-running, #px-captcha')) return true;
+  const corps = document.body ? document.body.innerText.slice(0, 600) : '';
+  return /^(just a moment|un instant|attention required|access denied)/i.test(document.title.trim())
+    || /checking your browser|verify(ing)? you are (a )?human|v[ée]rifi\S* (que|si) vous [êe]tes (un )?(humain|robot)/i.test(corps);
+}
+
+async function attendreAntiRobot(page) {
+  for (let i = 0; i < 15; i++) {
+    let bloque;
+    try { bloque = await page.evaluate(pageAntiRobot); } catch (e) { bloque = true; }
+    if (!bloque) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error('page de verification anti-robot (Cloudflare ou autre) : tests bonus non realises sur cette page');
+}
+
 async function executerTestsBonus(page) {
+  await attendreAntiRobot(page);
+  const fenetres = (await fenetresOuvertes(page)).map((adresse) => versFormatPa11y({
+    code: 'kit-nouvelle-fenetre',
+    type: 'error',
+    message: 'Une nouvelle fenetre s\'est ouverte sans action de l\'utilisateur : ' + adresse,
+    selector: 'html',
+    context: '<html>'
+  }));
   await page.evaluate(pagePreparer);
   const statiques = await page.evaluate(pageTestsStatiques, {
     liensVagues: LIENS_VAGUES,
@@ -1208,17 +1716,20 @@ async function executerTestsBonus(page) {
   const clavier = await parcourirAuClavier(page);
   const contrastes = await testerContrasteSurImage(page);
   const reflow = await testerReflow(page);
+  const espacement = await testerEspacement(page);
+  const audit = await page.evaluate(pageTestsAudit);
   const motifs = await page.evaluate(pageTestsMotifs);
   const motifsClavier = await testerMotifsClavier(page);
-  return [...[...statiques, ...images, ...structure, ...composants, ...motifs].map(versFormatPa11y),
-    ...clavier, ...contrastes, ...reflow, ...motifsClavier];
+  return [...fenetres, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...motifs].map(versFormatPa11y),
+    ...clavier, ...contrastes, ...reflow, ...espacement, ...motifsClavier];
 }
 
 module.exports = {
   executerTestsBonus,
+  requalifierAnomalies,
   // Exportes pour les tests du kit lui-meme.
   _interne: {
-    pagePreparer, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs,
+    pagePreparer, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs, pageTestsAudit,
     pageTestReflow, pageCandidatsContraste, parcourirAuClavier, testerContrasteSurImage, testerReflow, lirePng,
     LIENS_VAGUES, ALTS_SUSPECTS
   }

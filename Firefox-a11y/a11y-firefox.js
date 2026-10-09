@@ -21,7 +21,7 @@
 const fs = require('fs');
 const { firefox } = require('playwright');
 const AxeBuilder = require('@axe-core/playwright').default;
-const { executerTestsBonus } = require('./tests-bonus');
+const { executerTestsBonus, requalifierAnomalies } = require('./tests-bonus');
 
 /* ------------------------------------------------------------------ */
 /* Configuration                                                       */
@@ -37,7 +37,8 @@ const URLS = [
   'http://localhost:3000/site-test/erreurs-titres-reperes.html',
   'http://localhost:3000/site-test/piege-blocage.html',
   'http://localhost:3000/site-test/piege-boucle.html',
-  'http://localhost:3000/site-test/erreurs-composants.html'
+  'http://localhost:3000/site-test/erreurs-composants.html',
+  'http://localhost:3000/site-test/erreurs-audit.html'
 ];
 
 if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
@@ -96,6 +97,10 @@ async function analyser(page, url, capture) {
   }
 
   const resultats = await constructeur.analyze();
+  const axe = await requalifierAnomalies(page, [
+    ...resultats.violations.flatMap((r) => versFormatPa11y(r, 'error')),
+    ...resultats.incomplete.flatMap((r) => versFormatPa11y(r, 'warning'))
+  ]);
 
   // Tests bonus, apres axe car le parcours au clavier deplace le focus.
   // Une panne de ces tests ne doit pas faire perdre les resultats d'axe.
@@ -106,17 +111,12 @@ async function analyser(page, url, capture) {
     console.error(`\n  Tests bonus impossibles sur ${url} : ${erreur.message}`);
   }
 
-  const erreurs = [
-    ...resultats.violations.flatMap((r) => versFormatPa11y(r, 'error')),
-    ...bonus.filter((a) => a.type === 'error')
-  ];
-  const avertissements = [
-    ...resultats.incomplete.flatMap((r) => versFormatPa11y(r, 'warning')),
-    ...bonus.filter((a) => a.type !== 'error')
-  ];
+  const erreurs = [...axe, ...bonus].filter((a) => a.type === 'error');
+  const avertissements = [...axe, ...bonus].filter((a) => a.type !== 'error' && !a.nonApplicable);
+  const ecartees = axe.filter((a) => a.nonApplicable);
 
   console.log(`${erreurs.length} erreur(s), ${avertissements.length} a verifier`);
-  return { anomalies: [...erreurs, ...avertissements], erreurs: erreurs.length };
+  return { anomalies: [...erreurs, ...avertissements, ...ecartees], erreurs: erreurs.length };
 }
 
 async function main() {
