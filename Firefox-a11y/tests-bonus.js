@@ -33,6 +33,9 @@ const ALT_MAX = 120;
 // Nombre maximal de textes sur image mesures par page (3.2), une capture chacun.
 const MAX_CONTRASTES = 30;
 
+// Nombre maximal de composants de chaque type testes au clavier par page (7.3).
+const MAX_MOTIFS = 10;
+
 // Intitules de liens non explicites hors contexte (critere 6.1).
 const LIENS_VAGUES = [
   'cliquez ici', 'cliquer ici', 'ici', 'en savoir plus', 'savoir plus',
@@ -660,6 +663,119 @@ function pageTestsStructure() {
 
 // Contraste des composants d'interface (3.3) : contour des champs de saisie
 // et icones des boutons ou liens sans texte, au moins 3:1 avec le fond.
+function pageTestsMotifs() {
+  const anomalies = [];
+  const ajouter = (code, type, message, el) => anomalies.push({
+    code, type, message,
+    selector: window.__kitSelecteur(el),
+    context: el.outerHTML.slice(0, 250)
+  });
+  const masque = (el) => el.closest('[aria-hidden="true"]') || el.getClientRects().length === 0
+    || getComputedStyle(el).visibility === 'hidden';
+  const texte = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  const parIds = (valeur) => (valeur || '').split(/\s+/).filter(Boolean).map((id) => document.getElementById(id));
+
+  // 7.1 onglets
+  document.querySelectorAll('[role="tablist"]').forEach((liste) => {
+    if (masque(liste)) return;
+    const onglets = Array.from(liste.querySelectorAll('[role="tab"]')).filter((t) => t.closest('[role="tablist"]') === liste);
+    if (onglets.length === 0) {
+      ajouter('kit-motif-aria', 'error', 'Liste d\'onglets (role="tablist") sans onglet (role="tab")', liste);
+      return;
+    }
+    const choisis = onglets.filter((t) => t.getAttribute('aria-selected') === 'true');
+    if (choisis.length === 0) {
+      ajouter('kit-motif-aria', 'error', 'Aucun onglet n\'a aria-selected="true"', liste);
+    } else if (choisis.length > 1 && liste.getAttribute('aria-multiselectable') !== 'true') {
+      ajouter('kit-motif-aria', 'error', choisis.length + ' onglets ont aria-selected="true" en meme temps', liste);
+    }
+    onglets.forEach((onglet) => {
+      if (!['true', 'false'].includes(onglet.getAttribute('aria-selected'))) {
+        ajouter('kit-motif-aria', 'error', 'Onglet sans aria-selected="true" ou "false"', onglet);
+      }
+      const cibles = parIds(onglet.getAttribute('aria-controls'));
+      const lie = onglet.id && Array.from(document.querySelectorAll('[role="tabpanel"][aria-labelledby]'))
+        .some((p) => p.getAttribute('aria-labelledby').split(/\s+/).includes(onglet.id));
+      if (cibles.some((c) => !c)) {
+        ajouter('kit-motif-aria', 'error', 'aria-controls de l\'onglet pointe vers un panneau inexistant', onglet);
+      } else if (cibles.some((c) => c.getAttribute('role') !== 'tabpanel')) {
+        ajouter('kit-motif-aria', 'error', 'Le panneau relie a l\'onglet n\'a pas role="tabpanel"', onglet);
+      } else if (cibles.length === 0 && !lie) {
+        ajouter('kit-motif-aria', 'error', 'Onglet relie a aucun panneau (aria-controls, ou aria-labelledby sur le panneau)', onglet);
+      }
+    });
+  });
+
+  // 7.1 boutons qui deplient un contenu
+  document.querySelectorAll('[aria-expanded][aria-controls]').forEach((bouton) => {
+    if (masque(bouton) || bouton.getAttribute('role') === 'tab') return;
+    if (parIds(bouton.getAttribute('aria-controls')).some((c) => !c)) {
+      const ouvert = bouton.getAttribute('aria-expanded') === 'true';
+      ajouter('kit-motif-aria', ouvert ? 'error' : 'warning', 'aria-controls pointe vers un element inexistant'
+        + (ouvert ? '' : ' (il est peut-etre cree a l\'ouverture)'), bouton);
+    }
+  });
+
+  // 7.1 fenetres modales (meme fermees)
+  document.querySelectorAll('dialog, [role="dialog"], [role="alertdialog"]').forEach((fenetre) => {
+    const nom = texte(fenetre.getAttribute('aria-label'))
+      || parIds(fenetre.getAttribute('aria-labelledby')).filter(Boolean).map((e) => texte(e.textContent)).join(' ');
+    if (!nom) ajouter('kit-motif-aria', 'error', 'Fenetre modale sans nom (aria-labelledby ou aria-label)', fenetre);
+  });
+
+  return anomalies;
+}
+
+// Composants a tester au clavier (7.3) : marques pour les retrouver depuis Node.
+function pageCandidatsMotifs(max) {
+  const visible = (el) => !el.closest('[aria-hidden="true"]') && el.getClientRects().length > 0
+    && getComputedStyle(el).visibility !== 'hidden' && !el.disabled && el.getAttribute('aria-disabled') !== 'true';
+  const marquer = (el, type) => {
+    const id = 'm' + document.querySelectorAll('[data-kit-motif]').length;
+    el.setAttribute('data-kit-motif', id);
+    return { id, type, selecteur: window.__kitSelecteur(el), contexte: el.outerHTML.slice(0, 250) };
+  };
+  const candidats = [];
+  document.querySelectorAll('[role="tablist"]').forEach((liste) => {
+    const onglets = Array.from(liste.querySelectorAll('[role="tab"]')).filter(visible);
+    if (onglets.length < 2) return;
+    candidats.push(marquer(onglets.find((t) => t.getAttribute('aria-selected') === 'true') || onglets[0], 'onglet'));
+  });
+  Array.from(document.querySelectorAll('button[aria-expanded], [role="button"][aria-expanded]'))
+    .filter((el) => visible(el) && el.getAttribute('role') !== 'tab'
+      && !(el.tagName === 'BUTTON' && el.form && el.type === 'submit'))
+    .slice(0, max).forEach((el) => candidats.push(marquer(el, 'depliant')));
+  Array.from(document.querySelectorAll('[role="checkbox"], [role="switch"]'))
+    .filter((el) => visible(el) && el.tagName !== 'INPUT')
+    .slice(0, max).forEach((el) => candidats.push(marquer(el, 'case')));
+  return candidats;
+}
+
+function pageMotif({ action, id }) {
+  if (action === 'nettoyer') {
+    document.querySelectorAll('[data-kit-motif]').forEach((e) => e.removeAttribute('data-kit-motif'));
+    if (document.activeElement) document.activeElement.blur();
+    return true;
+  }
+  const el = document.querySelector('[data-kit-motif="' + id + '"]');
+  if (!el) return null;
+  if (action === 'focus') {
+    el.focus();
+    return document.activeElement === el;
+  }
+  if (action === 'clic') {
+    el.click();
+    return true;
+  }
+  const actif = document.activeElement;
+  return {
+    ouvert: el.getAttribute('aria-expanded'),
+    coche: el.getAttribute('aria-checked'),
+    ongletSuivant: !!actif && actif !== el && actif.getAttribute('role') === 'tab'
+      && actif.closest('[role="tablist"]') === el.closest('[role="tablist"]')
+  };
+}
+
 function pageTestsComposants() {
   const C = window.__kitCouleurs;
   const anomalies = [];
@@ -1011,6 +1127,66 @@ async function changerLargeur(page, taille) {
   return avant;
 }
 
+// 7.3 : chaque composant doit reagir au clavier. Les fleches entre onglets
+// relevent du motif de conception ARIA, seulement recommande : avertissement.
+async function testerMotifsClavier(page) {
+  const anomalies = [];
+  const pause = () => page.evaluate(() => new Promise((r) => setTimeout(r, 200)));
+  const signaler = (c, code, type, message) => anomalies.push(versFormatPa11y({
+    code, type, message, selector: c.selecteur, context: c.contexte
+  }));
+  const adresse = page.url();
+  const candidats = await page.evaluate(pageCandidatsMotifs, MAX_MOTIFS);
+  try {
+    for (const c of candidats) {
+      if (page.url() !== adresse) break;
+      if (!(await page.evaluate(pageMotif, { action: 'focus', id: c.id }))) continue;
+      const avant = await page.evaluate(pageMotif, { action: 'etat', id: c.id });
+      if (c.type === 'onglet') {
+        await page.keyboard.press('ArrowRight');
+        await pause();
+        const apres = await page.evaluate(pageMotif, { action: 'etat', id: c.id });
+        if (apres && !apres.ongletSuivant) {
+          signaler(c, 'kit-motif-clavier', 'warning',
+            'La fleche droite ne deplace pas le focus vers l\'onglet suivant (motif de conception ARIA)');
+        }
+        continue;
+      }
+      const cle = c.type === 'case' ? 'coche' : 'ouvert';
+      let reagit = false;
+      for (const touche of c.type === 'case' ? ['Space'] : ['Enter', 'Space']) {
+        await page.evaluate(pageMotif, { action: 'focus', id: c.id });
+        await page.keyboard.press(touche);
+        await pause();
+        const apres = await page.evaluate(pageMotif, { action: 'etat', id: c.id });
+        if (!apres || page.url() !== adresse) break;
+        if (apres[cle] !== avant[cle]) {
+          reagit = true;
+          await page.evaluate(pageMotif, { action: 'focus', id: c.id });
+          await page.keyboard.press(touche);
+          await pause();
+          break;
+        }
+      }
+      if (!reagit && page.url() === adresse) {
+        // Si le clic ne change rien non plus, ce n'est pas un probleme propre au clavier.
+        await page.evaluate(pageMotif, { action: 'clic', id: c.id });
+        await pause();
+        const apresClic = await page.evaluate(pageMotif, { action: 'etat', id: c.id });
+        if (!apresClic || page.url() !== adresse || apresClic[cle] === avant[cle]) continue;
+        await page.evaluate(pageMotif, { action: 'clic', id: c.id });
+        await pause();
+        signaler(c, 'kit-clavier-composant', 'error', c.type === 'case'
+          ? 'La case reagit au clic mais pas a la touche Espace'
+          : 'Le contenu s\'ouvre au clic mais ni avec Entree ni avec Espace');
+      }
+    }
+  } finally {
+    if (page.url() === adresse) await page.evaluate(pageMotif, { action: 'nettoyer', id: '' });
+  }
+  return anomalies;
+}
+
 async function testerReflow(page) {
   const avant = await changerLargeur(page, { width: LARGEUR_REFLOW, height: 800 });
   try {
@@ -1032,14 +1208,17 @@ async function executerTestsBonus(page) {
   const clavier = await parcourirAuClavier(page);
   const contrastes = await testerContrasteSurImage(page);
   const reflow = await testerReflow(page);
-  return [...[...statiques, ...images, ...structure, ...composants].map(versFormatPa11y), ...clavier, ...contrastes, ...reflow];
+  const motifs = await page.evaluate(pageTestsMotifs);
+  const motifsClavier = await testerMotifsClavier(page);
+  return [...[...statiques, ...images, ...structure, ...composants, ...motifs].map(versFormatPa11y),
+    ...clavier, ...contrastes, ...reflow, ...motifsClavier];
 }
 
 module.exports = {
   executerTestsBonus,
   // Exportes pour les tests du kit lui-meme.
   _interne: {
-    pagePreparer, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants,
+    pagePreparer, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs,
     pageTestReflow, pageCandidatsContraste, parcourirAuClavier, testerContrasteSurImage, testerReflow, lirePng,
     LIENS_VAGUES, ALTS_SUSPECTS
   }

@@ -42,6 +42,7 @@
     "http://localhost:3000/site-test/erreurs-structure-formulaires.html",
     "http://localhost:3000/site-test/erreurs-titres-reperes.html",
     "http://localhost:3000/site-test/piege-blocage.html",
-    "http://localhost:3000/site-test/piege-boucle.html"
+    "http://localhost:3000/site-test/piege-boucle.html",
+	"http://localhost:3000/site-test/erreurs-composants.html"
   ]
 }

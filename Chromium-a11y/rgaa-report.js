@@ -198,6 +198,9 @@ const AXE_VERS_RGAA = {
   'kit-titre-vide': '9.1',
   'kit-reperes': '12.6',
   'kit-tabindex': '12.8',
+  'kit-motif-aria': '7.1',
+  'kit-motif-clavier': '7.3',
+  'kit-clavier-composant': '7.3',
 
   // 13. Consultation
   'meta-refresh': '13.1',
