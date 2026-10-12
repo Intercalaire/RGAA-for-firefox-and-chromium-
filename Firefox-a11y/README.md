@@ -32,6 +32,8 @@ Les deux kits (Chromium-a11y et Firefox-a11y) peuvent être inclus dans le même
 - Quand axe ne sait pas trancher un contraste (critère 3.2), le kit le mesure lui-même : à partir des couleurs, ou sur une capture d'écran pour un texte sur image ou dégradé. Les contrastes suffisants sont listés à la fin du récapitulatif, sous « Ecartees apres verification sur la page » ; les contrastes insuffisants deviennent des erreurs ; les autres restent « à vérifier », avec la fourchette mesurée ou la raison dans le message (« non mesurable par le kit : ... »).
 - axe peut aussi mettre « à vérifier » des attributs ARIA des fenêtres modales du DSFR (critère 7.1) : le composant standard du DSFR est normalement correct.
 - Si un site renvoie une page de vérification anti-robot (« Vérification que vous êtes un humain »), les tests bonus ne sont pas faits sur cette page : elle est signalée en échec au lieu de donner de faux résultats.
+- Une page qui répond 404 ou 500, une page d'erreur (titre « Page introuvable », « Erreur 404 »...) ou une page vide est signalée en échec et n'est pas analysée. Une page redirigée ailleurs (vers la connexion, l'accueil...) est analysée, mais le journal affiche « attention : redirigée vers ... » : vérifier que c'est bien la page voulue.
+- Une page qui dépasse 5 minutes d'analyse est abandonnée et signalée en échec, les autres pages continuent. Pour changer ce délai : `A11Y_DELAI_PAGE=600 make test` (en secondes).
 - Le récapitulatif final classe toutes les anomalies par critère RGAA. Un même élément signalé par plusieurs règles pour le même critère (axe et un test bonus, par exemple) n'y est compté qu'une fois (ligne « Doublons fusionnes ») : ses totaux peuvent donc être un peu plus bas que ceux affichés page par page pendant l'analyse. Il ne remplace pas un audit : les outils automatiques ne couvrent qu'une partie des 106 critères.
 
 ### Pour faire ses tests en local
@@ -63,7 +65,7 @@ Pour tester seulement certaines pages, sans modifier a11y-firefox.js :
 ```
 Le serveur local est démarré automatiquement à la racine du projet, puis arrêté à la fin. S'il tourne déjà sur le port 3000, il est réutilisé.
 
-S'il reste des erreurs (une fois les résultats écartés retirés), make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, Firefox absent...) : lire le message au-dessus. Une erreur « Cannot find module » signifie que node_modules est abîmé : lancer `make fclean` puis `make installer`.
+S'il reste des erreurs (une fois les résultats écartés retirés), make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, page d'erreur 404, page abandonnée, Firefox absent...) : lire le message au-dessus. Une erreur « Cannot find module » signifie que node_modules est abîmé : lancer `make fclean` puis `make installer`.
 
 Pour voir ce que mesure le test de contraste sur image (3.2), lancer :
 ```

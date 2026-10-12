@@ -31,6 +31,8 @@ Les deux kits (Chromium-a11y et Firefox-a11y) peuvent être inclus dans le même
 - Après pa11y, chaque erreur d'axe et de htmlcs est revérifiée sur la page réelle. Celles que le RGAA rend non applicables (iframe de statistiques masquée, contraste d'un composant inactif, cible du lien d'évitement créée après le chargement, tableau de mise en forme conforme au test 5.8.1) sont retirées des erreurs et listées à la fin du récapitulatif, sous « Ecartees apres verification sur la page », avec leur raison. Un élément masqué au chargement (menu ou fenêtre modale fermés) passe en « à vérifier une fois affiché ». Les messages de pa11y affichés au début du test ne tiennent pas compte de ces vérifications : se fier au récapitulatif.
 - htmlcs peut aussi signaler des logos SVG pourtant nommés : en cas de doute, vérifier si axe signale aussi l'élément.
 - Si un site renvoie une page de vérification anti-robot (« Vérification que vous êtes un humain »), les tests bonus ne sont pas faits sur cette page : elle est signalée en échec au lieu de donner de faux résultats.
+- Une page qui répond 404 ou 500, une page d'erreur (titre « Page introuvable », « Erreur 404 »...) ou une page vide est signalée en échec et n'est pas analysée (ses résultats pa11y sont retirés du rapport). Une page redirigée ailleurs (vers la connexion, l'accueil...) est analysée, mais le journal affiche « attention : redirigée vers ... » : vérifier que c'est bien la page voulue.
+- Une page qui dépasse 5 minutes d'analyse est abandonnée et signalée en échec, les autres pages continuent. Pour changer ce délai : `A11Y_DELAI_PAGE=600 make test` (en secondes).
 - Le récapitulatif final classe toutes les anomalies par critère RGAA. Il ne remplace pas un audit : les outils automatiques ne couvrent qu'une partie des 106 critères.
 
 ### Pour faire ses tests en local
@@ -68,7 +70,7 @@ Pour tester seulement certaines pages, sans modifier pa11yci.json :
 ```
 Le serveur local est démarré automatiquement à la racine du projet, puis arrêté à la fin. S'il tourne déjà sur le port 3000, il est réutilisé.
 
-pa11y-ci, puis les tests bonus, puis le récapitulatif RGAA s'enchaînent. S'il reste des erreurs dans le récapitulatif (une fois les résultats écartés retirés), make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, Chrome absent...) : lire le message au-dessus.
+pa11y-ci, puis les tests bonus, puis le récapitulatif RGAA s'enchaînent. S'il reste des erreurs dans le récapitulatif (une fois les résultats écartés retirés), make termine par « Error 2 » : c'est normal, cela signale simplement que la page contient des anomalies. « Error 1 » signale en revanche une panne (page injoignable, page d'erreur 404, page abandonnée, Chrome absent...) : lire le message au-dessus.
 
 Pour voir ce que mesure le test de contraste sur image (3.2), lancer :
 ```

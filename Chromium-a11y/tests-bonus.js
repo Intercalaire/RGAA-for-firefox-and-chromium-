@@ -1711,6 +1711,47 @@ async function attendreAntiRobot(page) {
   throw new Error('page de verification anti-robot (Cloudflare ou autre) : tests bonus non realises sur cette page');
 }
 
+// Page d'erreur, page vide ou redirection : la page testee n'est pas celle demandee.
+function pageChargement() {
+  const titre = (document.title || '').trim();
+  const h1 = document.querySelector('h1');
+  const texte = (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').trim();
+  const media = document.querySelector('body img, body svg, body video, body canvas, body iframe, body object, body embed');
+  return { titre, h1: h1 ? h1.textContent.replace(/\s+/g, ' ').trim() : '', vide: !texte && !media };
+}
+
+const TITRE_ERREUR = /^\s*(erreur|error)?\s*[45]\d\d\s*$|\b(erreur|error)\s*[45]\d\d\b|^\s*[45]\d\d\s*[-:–|]?\s*(not found|forbidden|internal server error|introuvable|interdit|erreur)|page (introuvable|non trouv[ée]e)|page not found|internal server error|erreur (interne|du serveur)/i;
+
+function cheminComparable(u) {
+  try {
+    const x = new URL(u);
+    return x.pathname.replace(/\/index(\.html?)?$/, '/').replace(/\.html?$/, '').replace(/\/+$/, '') + x.search;
+  } catch (e) { return u; }
+}
+
+async function verifierChargement(page, urlDemandee, reponse) {
+  const statut = reponse && typeof reponse.status === 'function' ? reponse.status() : 0;
+  const invalide = (message) => Object.assign(new Error(`${message} : page non analysee`), { pageInvalide: true });
+  if (statut >= 400) throw invalide(`la page repond ${statut}`);
+  const etat = await page.evaluate(pageChargement);
+  if (TITRE_ERREUR.test(etat.titre) || TITRE_ERREUR.test(etat.h1)) throw invalide(`page d'erreur (« ${etat.titre || etat.h1} »)`);
+  if (etat.vide) throw invalide('page vide');
+  const finale = page.url();
+  return cheminComparable(finale) !== cheminComparable(urlDemandee) ? finale : null;
+}
+
+function DELAI_PAGE_MS() { return (Number(process.env.A11Y_DELAI_PAGE) || 300) * 1000; }
+
+async function avecDelai(promesse, quoi) {
+  let minuteur;
+  const delai = DELAI_PAGE_MS();
+  const limite = new Promise((_, rejeter) => {
+    minuteur = setTimeout(() => rejeter(new Error(`${quoi} depasse ${delai / 1000} s : page abandonnee (A11Y_DELAI_PAGE pour changer)`)), delai);
+  });
+  promesse.catch(() => {});
+  try { return await Promise.race([promesse, limite]); } finally { clearTimeout(minuteur); }
+}
+
 // 12.1, 12.2, 12.4, 12.5 : menu, plan du site et moteur de recherche de la page.
 function pageNavigation() {
   const norm = (t) => (t || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -2170,6 +2211,8 @@ async function executerTestsBonus(page) {
 module.exports = {
   executerTestsBonus,
   requalifierAnomalies,
+  verifierChargement,
+  avecDelai,
   // Exportes pour les tests du kit lui-meme.
   _interne: {
     pagePreparer, pageNavigation, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs, pageTestsAudit, pageTestsComplements,

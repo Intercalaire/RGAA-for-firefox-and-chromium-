@@ -21,7 +21,7 @@
 const fs = require('fs');
 const { firefox } = require('playwright');
 const AxeBuilder = require('@axe-core/playwright').default;
-const { executerTestsBonus, requalifierAnomalies } = require('./tests-bonus');
+const { executerTestsBonus, requalifierAnomalies, verifierChargement, avecDelai } = require('./tests-bonus');
 
 /* ------------------------------------------------------------------ */
 /* Configuration                                                       */
@@ -91,8 +91,10 @@ function versFormatPa11y(resultat, type) {
 async function analyser(page, url, capture) {
   process.stdout.write(`Analyse de ${url} ... `);
 
-  await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+  const reponse = await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForTimeout(ATTENTE_MS);
+  const redirection = await verifierChargement(page, url, reponse);
+  if (redirection) process.stdout.write(`(attention : redirigee vers ${redirection}) `);
 
   if (capture) {
     const nom = `capture-${url.replace(/[^a-z0-9]/gi, '_').slice(0, 60)}.png`;
@@ -116,8 +118,9 @@ async function analyser(page, url, capture) {
   try {
     bonus = await executerTestsBonus(page);
   } catch (erreur) {
-    console.error(`\n  Tests bonus impossibles sur ${url} : ${erreur.message}`);
+    if (!page.isClosed()) console.error(`\n  Tests bonus impossibles sur ${url} : ${erreur.message}`);
   }
+  if (page.isClosed()) return { anomalies: [], erreurs: 0 };
 
   const erreurs = [...axe, ...bonus].filter((a) => a.type === 'error');
   const avertissements = [...axe, ...bonus].filter((a) => a.type !== 'error' && !a.nonApplicable);
@@ -131,7 +134,8 @@ async function main() {
   const { sortie, capture } = lireArguments();
 
   const navigateur = await firefox.launch();
-  const page = await (await navigateur.newContext()).newPage();
+  const contexte = await navigateur.newContext();
+  let page = await contexte.newPage();
 
   const resultats = {};
   let totalErreurs = 0;
@@ -141,7 +145,7 @@ async function main() {
   try {
     for (const url of URLS) {
       try {
-        const { anomalies, erreurs } = await analyser(page, url, capture);
+        const { anomalies, erreurs } = await avecDelai(analyser(page, url, capture), url);
         resultats[url] = anomalies;
         totalErreurs += erreurs;
         totalAnomalies += anomalies.length;
@@ -149,6 +153,8 @@ async function main() {
         console.error(`  Echec sur ${url} : ${erreur.message}`);
         resultats[url] = [];
         echecs += 1;
+        await page.close().catch(() => {});
+        page = await contexte.newPage();
       }
     }
   } finally {

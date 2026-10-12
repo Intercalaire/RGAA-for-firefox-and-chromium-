@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { pathToFileURL } = require('url');
-const { executerTestsBonus, requalifierAnomalies } = require('./tests-bonus');
+const { executerTestsBonus, requalifierAnomalies, verifierChargement, avecDelai } = require('./tests-bonus');
 
 const CONFIG = './pa11yci.json';
 const RAPPORT = './pa11y-report.json';
@@ -130,38 +130,49 @@ async function main() {
   let requalifiees = 0;
   let erreursRetirees = 0;
 
+  async function analyser(page, url) {
+    await page.setViewport({ width: 1280, height: 1024 });
+    const reponse = await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    await new Promise((r) => setTimeout(r, ATTENTE_MS));
+    const redirection = await verifierChargement(page, url, reponse);
+    if (redirection) console.log(` > ${url} - attention : redirigee vers ${redirection}, c'est cette page qui est analysee`);
+
+    const cle = cleDuRapport(rapport, url);
+    if (rapport.results[cle]) {
+      const avant = rapport.results[cle];
+      const apres = await requalifierAnomalies(page, avant);
+      const changees = apres.filter((a, i) => a !== avant[i]).length;
+      requalifiees += changees;
+      erreursRetirees += avant.filter((a, i) => a.type === 'error' && apres[i].type !== 'error').length;
+      rapport.results[cle] = apres;
+    }
+
+    const anomalies = await executerTestsBonus(page);
+    const erreurs = anomalies.filter((a) => a.type === 'error').length;
+
+    const cleBonus = cleDuRapport(rapport, url) || url;
+    rapport.results[cleBonus] = [...(rapport.results[cleBonus] || []), ...anomalies];
+    ajouts += anomalies.length;
+    erreursAjoutees += erreurs;
+    console.log(` > ${url} - ${erreurs} erreur(s), ${anomalies.length - erreurs} a verifier`);
+  }
+
   console.log(`Tests bonus sous Chromium sur ${urls.length} page(s) :`);
   try {
     for (const url of urls) {
       const page = await navigateur.newPage();
       try {
-        await page.setViewport({ width: 1280, height: 1024 });
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        await new Promise((r) => setTimeout(r, ATTENTE_MS));
-
-        const cle = cleDuRapport(rapport, url);
-        if (rapport.results[cle]) {
-          const avant = rapport.results[cle];
-          const apres = await requalifierAnomalies(page, avant);
-          const changees = apres.filter((a, i) => a !== avant[i]).length;
-          requalifiees += changees;
-          erreursRetirees += avant.filter((a, i) => a.type === 'error' && apres[i].type !== 'error').length;
-          rapport.results[cle] = apres;
-        }
-
-        const anomalies = await executerTestsBonus(page);
-        const erreurs = anomalies.filter((a) => a.type === 'error').length;
-
-        const cleBonus = cleDuRapport(rapport, url) || url;
-        rapport.results[cleBonus] = [...(rapport.results[cleBonus] || []), ...anomalies];
-        ajouts += anomalies.length;
-        erreursAjoutees += erreurs;
-        console.log(` > ${url} - ${erreurs} erreur(s), ${anomalies.length - erreurs} a verifier`);
+        await avecDelai(analyser(page, url), url);
       } catch (erreur) {
         console.error(` > ${url} - echec : ${erreur.message}`);
         echecs += 1;
+        const cle = cleDuRapport(rapport, url);
+        if (erreur.pageInvalide && cle) {
+          erreursRetirees += rapport.results[cle].filter((a) => a.type === 'error').length;
+          delete rapport.results[cle];
+        }
       } finally {
-        await page.close();
+        await page.close().catch(() => {});
       }
     }
   } finally {
