@@ -224,6 +224,8 @@ const AXE_VERS_RGAA = {
   'kit-changement-contexte': '7.4',
   'kit-zoom-200': '10.4',
   'kit-plan-lien-casse': '12.3',
+  'kit-son-auto': '4.10',
+  'kit-orientation': '13.9',
   'kit-espacement': '10.12',
 
   // 13. Consultation
@@ -366,7 +368,8 @@ const LIBELLES_CRITERES = {
   '13.2': 'L\'ouverture d\'une nouvelle fenetre est-elle declenchee par une action de l\'utilisateur ?',
   '13.3': 'Chaque document bureautique en telechargement a-t-il, si necessaire, une version accessible ?',
   '13.5': 'Chaque contenu cryptique (art ASCII, emoticone...) a-t-il une alternative ?',
-  '13.8': 'Les contenus en mouvement sont-ils controlables ?'
+  '13.8': 'Les contenus en mouvement sont-ils controlables ?',
+  '13.9': 'Le contenu est-il consultable quelle que soit l\'orientation de l\'ecran ?'
 };
 
 /* ------------------------------------------------------------------ */
@@ -619,7 +622,7 @@ function tronquer(texte, longueur) {
   return propre.length > longueur ? `${propre.slice(0, longueur - 1)}…` : propre;
 }
 
-function afficher(groupes, anomalies, detaille, ecartees = [], fusions = 0) {
+function afficher(groupes, anomalies, detaille, ecartees = [], fusions = 0, echecs = []) {
   const c = COULEURS;
   const totalErreurs = anomalies.filter((a) => (a.type || 'error') === 'error').length;
   const totalAutres = anomalies.length - totalErreurs;
@@ -631,6 +634,7 @@ function afficher(groupes, anomalies, detaille, ecartees = [], fusions = 0) {
   console.log(`Anomalies : ${c.rouge}${totalErreurs} erreur(s)${c.fin}` +
     (totalAutres ? `, ${totalAutres} avertissement(s)/note(s)` : '') +
     ` sur ${urls.size} page(s)`);
+  if (echecs.length > 0) console.log(`${c.rouge}${echecs.length} page(s) non analysee(s) : voir la fin du recapitulatif${c.fin}`);
   console.log('');
 
   if (groupes.thematiques.length === 0) {
@@ -687,6 +691,12 @@ function afficher(groupes, anomalies, detaille, ecartees = [], fusions = 0) {
     console.log('');
   }
 
+  if (echecs.length > 0) {
+    console.log(`${c.rouge}Pages non analysees (${echecs.length}) : leurs resultats ne figurent pas ci-dessus${c.fin}`);
+    echecs.forEach((e) => console.log(`  - ${e.url}\n    ${c.gris}${e.raison}${c.fin}`));
+    console.log('');
+  }
+
   console.log('='.repeat(60));
   console.log(`${c.jaune}Rappel : ce recapitulatif traduit des regles WCAG vers la${c.fin}`);
   console.log(`${c.jaune}nomenclature RGAA. Il ne constitue pas un audit : les outils${c.fin}`);
@@ -713,13 +723,16 @@ function main() {
   });
   const chemin = path.resolve(positionnels[0] || './a11y-report.json');
 
-  const { anomalies: toutes } = lireRapport(chemin);
+  const { anomalies: toutes, meta } = lireRapport(chemin);
+  const echecs = Object.entries(meta.echecs || {}).map(([url, raison]) => ({
+    url, raison: String(raison).replace(/\x1b\[[0-9;]*m/g, '').split('\n')[0].trim()
+  }));
   // Resultats d'outils ecartes apres verification sur la page reelle.
   const ecartees = toutes.filter((a) => a.nonApplicable);
   const { anomalies, fusions } = fusionnerDoublons(toutes.filter((a) => !a.nonApplicable));
   const groupes = regrouper(anomalies);
 
-  afficher(groupes, anomalies, detaille, ecartees, fusions);
+  afficher(groupes, anomalies, detaille, ecartees, fusions, echecs);
 
   if (sortieJson) {
     const contenu = {
@@ -730,6 +743,7 @@ function main() {
       avertissement: 'Traduction WCAG vers RGAA. Ne constitue pas un audit RGAA.',
       thematiques: groupes.thematiques,
       nonClassees: groupes.nonClassees,
+      pagesNonAnalysees: echecs,
       nonApplicables: ecartees.map((a) => ({
         url: a.url, raison: a.nonApplicable, code: a.code, message: a.message, selecteur: a.selector
       }))

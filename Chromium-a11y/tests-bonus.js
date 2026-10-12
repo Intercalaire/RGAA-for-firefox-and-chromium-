@@ -1474,6 +1474,17 @@ function pageRequalifier(liste) {
   const inactif = (el) => el.closest(':disabled, [aria-disabled="true"]')
     || (el.closest('label') && el.closest('label').control && el.closest('label').control.disabled)
     || (el.tagName === 'A' && !el.hasAttribute('href') && !el.hasAttribute('tabindex') && !el.hasAttribute('role'));
+  const arretSon = (m) => {
+    const boutons = 'button, [role="button"], input[type="button"], input[type="checkbox"], [role="switch"]';
+    const estArret = (b) => !masque(b) && /pause|stop|arr[eê]t|couper|muet|mute|silence|volume|musique|activer le son|sound/i.test([b.textContent,
+      b.getAttribute('aria-label'), b.title, b.value, b.labels ? Array.from(b.labels).map((l) => l.textContent).join(' ') : ''].join(' '));
+    if (Array.from(document.querySelectorAll('a[href], input, select, textarea, ' + boutons)).filter((x) => !masque(x)).slice(0, 5)
+      .some((x) => !x.closest('main, [role="main"]') && estArret(x))) return true;
+    for (let p = m.parentElement, i = 0; p && i < 3 && !p.matches('main, [role="main"], body'); p = p.parentElement, i++) {
+      if (Array.from(p.querySelectorAll(boutons)).some(estArret)) return true;
+    }
+    return false;
+  };
   const K = window.__kitCouleurs;
   // 3.2 : contraste qu'axe n'a pas pu calculer, mesure si aucun pseudo-element ne peint de fond
   // et si rien ne recouvre le texte.
@@ -1606,6 +1617,10 @@ function pageRequalifier(liste) {
     }
     if (htmlcs && /\.H32(\.|,|$)/.test(code)) return { type: 'warning' };
     if (!el) return null;
+    // 4.10
+    if (code === 'no-autoplay-audio' && arretSon(el)) {
+      return { type: 'warning', message: 'Bouton pour arreter ou couper le son trouve dans la page, a verifier : ' + message };
+    }
     // 3.2 : texte d'un element d'interface sur lequel aucune action n'est possible.
     if (/color-contrast|1_4_3|1_4_6/.test(code) && inactif(el)) return { nonApplicable: 'composant inactif' };
     if (!htmlcs || el.closest('head') || el === document.documentElement || el === document.body) return null;
@@ -1975,6 +1990,44 @@ function pageTestsComplements() {
       ajouter('kit-survol-seul', 'warning', 'Contenu qui apparait au survol (' + sel.slice(0, 80) + ') sans regle equivalente au focus clavier : verifier qu\'il apparait aussi au clavier', declencheur);
     });
   });
+
+  // 4.10
+  const ARRET = /pause|stop|arr[eê]t|couper|muet|mute|silence|volume|musique|activer le son|sound/i;
+  const BOUTONS = 'button, [role="button"], input[type="button"], input[type="checkbox"], [role="switch"]';
+  const estArret = (b) => !masque(b) && ARRET.test([b.textContent, b.getAttribute('aria-label'), b.title, b.value,
+    b.labels ? Array.from(b.labels).map((l) => l.textContent).join(' ') : ''].join(' '));
+  const arretEnTete = Array.from(document.querySelectorAll('a[href], input, select, textarea, ' + BOUTONS))
+    .filter((x) => !masque(x)).slice(0, 5).some((x) => !x.closest('main, [role="main"]') && estArret(x));
+  const arretPres = (m) => {
+    if (arretEnTete) return true;
+    for (let p = m.parentElement, i = 0; p && i < 3 && !p.matches('main, [role="main"], body'); p = p.parentElement, i++) {
+      if (Array.from(p.querySelectorAll(BOUTONS)).some(estArret)) return true;
+    }
+    return false;
+  };
+  document.querySelectorAll('audio, video').forEach((m) => {
+    if (m.muted || m.volume === 0 || m.duration <= 3 || m.mozHasAudio === false || (m.controls && !masque(m))) return;
+    if (!m.autoplay && m.paused && m.played.length === 0) return;
+    const origine = m.autoplay ? 'Son en lecture automatique (autoplay)' : 'Son lance automatiquement par un script';
+    if (arretPres(m)) {
+      ajouter('kit-son-auto', 'warning', origine + ', de plus de 3 secondes : bouton pour l\'arreter ou couper le son trouve, verifier qu\'il fonctionne', m);
+    } else {
+      ajouter('kit-son-auto', 'error', origine + ', de plus de 3 secondes, sans bouton pour l\'arreter ou couper le son', m);
+    }
+  });
+  document.querySelectorAll('bgsound, embed[src], object[data]').forEach((e) => {
+    const src = e.getAttribute('src') || e.getAttribute('data') || '';
+    const auto = (e.getAttribute('autostart') || e.getAttribute('autoplay') || 'true').toLowerCase();
+    if (arretPres(e)) return;
+    if (e.tagName === 'BGSOUND' || (/\.(mp3|wav|ogg|oga|m4a|aac|mid|midi|wma)(\?|#|$)/i.test(src) && !/^(false|0)$/.test(auto))) {
+      ajouter('kit-son-auto', 'warning', 'Son integre (' + e.tagName.toLowerCase() + ') susceptible de demarrer seul, sans bouton pour l\'arreter : a verifier', e);
+    }
+  });
+  document.querySelectorAll('iframe[src]').forEach((f) => {
+    const src = f.getAttribute('src');
+    if (masque(f) || !/[?&](autoplay|auto_play)=(1|true)(&|#|$)/i.test(src) || /[?&](mute|muted)=(1|true)(&|#|$)/i.test(src)) return;
+    ajouter('kit-son-auto', 'warning', 'Lecteur integre en lecture automatique (autoplay=1) sans son coupe (mute=1) : verifier que le son peut etre arrete', f);
+  });
   return anomalies;
 }
 
@@ -2136,6 +2189,76 @@ async function testerZoom(page) {
   }));
 }
 
+// 13.9
+const ORIENTATIONS = [['portrait', { width: 412, height: 915 }], ['paysage', { width: 915, height: 412 }]];
+
+function pageOrientation() {
+  const visible = (el) => {
+    if (!el || el.getClientRects().length === 0) return false;
+    const st = getComputedStyle(el);
+    return st.visibility !== 'hidden' && parseFloat(st.opacity) > 0;
+  };
+  const decrire = (el) => ({ selecteur: window.__kitSelecteur(el), contexte: el.outerHTML.slice(0, 250) });
+  const zone = document.querySelector('main, [role="main"]') || document.body;
+  const zoneVisible = visible(zone) && visible(document.body);
+  const ROTATION = /(tourne[rz]|pivote[rz]|faites pivoter|retourne[rz]|basculez|passez)[^.!?]{0,40}(appareil|t[ée]l[ée]phone|tablette|[ée]cran|mobile|mode portrait|mode paysage|en portrait|en paysage)|rotate[^.!?]{0,30}(device|phone|screen|tablet)|(switch|turn)[^.!?]{0,30}(portrait|landscape)/i;
+  let message = null;
+  const marcheur = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = marcheur.nextNode(); n && !message; n = marcheur.nextNode()) {
+    if (!/tourn|pivot|retourn|bascul|passez|rotat|switch|turn/i.test(n.textContent)) continue;
+    for (let el = n.parentElement, i = 0; el && el !== document.body && i < 3; el = el.parentElement, i++) {
+      const t = el.textContent.replace(/\s+/g, ' ').trim();
+      if (t.length > 300) break;
+      if (ROTATION.test(t)) {
+        if (visible(el) && !el.closest('script, style, noscript, template')) message = { ...decrire(el), texte: t.slice(0, 80) };
+        break;
+      }
+    }
+  }
+  return {
+    zone: decrire(zone),
+    zoneVisible,
+    texte: zoneVisible ? zone.innerText.replace(/\s+/g, ' ').trim().length : 0,
+    message
+  };
+}
+
+async function testerOrientation(page) {
+  const taille = (page.viewportSize ? page.viewportSize() : page.viewport()) || { width: 1280, height: 1024 };
+  const etats = {};
+  try {
+    for (const [nom, dimensions] of ORIENTATIONS) {
+      await changerLargeur(page, dimensions);
+      etats[nom] = await page.evaluate(pageOrientation);
+    }
+  } finally {
+    await changerLargeur(page, taille);
+  }
+  const signaler = (type, message, cible) => [versFormatPa11y({
+    code: 'kit-orientation', type, message, selector: cible.selecteur, context: cible.contexte
+  })];
+  const paires = [['portrait', 'paysage'], ['paysage', 'portrait']];
+  for (const [a, b] of paires) {
+    const m = etats[a].message;
+    if (m && !(etats[b].message && etats[b].message.selecteur === m.selecteur)) {
+      return signaler('error', 'Message demandant de changer d\'orientation affiche en mode ' + a + ' (« ' + m.texte
+        + ' ») : le contenu doit etre consultable en portrait et en paysage (hors jeu, piano, depot de cheque...)', m);
+    }
+  }
+  for (const [a, b] of paires) {
+    if (!etats[a].zoneVisible && etats[b].zoneVisible) {
+      return signaler('error', 'Contenu principal masque en mode ' + a + ', visible en mode ' + b, etats[a].zone);
+    }
+  }
+  for (const [a, b] of paires) {
+    if (etats[b].texte > 200 && etats[a].texte < etats[b].texte * 0.3) {
+      return signaler('warning', 'En mode ' + a + ', le contenu principal ne montre que ' + Math.round(100 * etats[a].texte / etats[b].texte)
+        + ' % du texte visible en mode ' + b + ' : verifier que le contenu reste le meme', etats[a].zone);
+    }
+  }
+  return [];
+}
+
 // 12.3.2 : sur la page « plan du site », chaque lien interne doit aboutir.
 // 401, 403 et 429 (pages protegees ou limitees) ne sont pas comptes comme casses.
 async function pagePlanDuSite() {
@@ -2197,6 +2320,7 @@ async function executerTestsBonus(page) {
   const reflow = await testerReflow(page);
   const espacement = await testerEspacement(page);
   const zoom = await testerZoom(page);
+  const orientation = await testerOrientation(page);
   const planDuSite = await page.evaluate(pagePlanDuSite);
   const audit = await page.evaluate(pageTestsAudit);
   const complements = await page.evaluate(pageTestsComplements);
@@ -2205,7 +2329,7 @@ async function executerTestsBonus(page) {
   const raccourcis = await testerRaccourcis(page);
   const listes = await testerListesDeroulantes(page);
   return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...planDuSite, ...motifs].map(versFormatPa11y),
-    ...clavier, ...contrastes, ...reflow, ...espacement, ...zoom, ...motifsClavier, ...raccourcis, ...listes];
+    ...clavier, ...contrastes, ...reflow, ...espacement, ...zoom, ...orientation, ...motifsClavier, ...raccourcis, ...listes];
 }
 
 module.exports = {

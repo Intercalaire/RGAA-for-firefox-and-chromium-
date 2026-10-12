@@ -46,7 +46,8 @@ const URLS = [
   'http://127.0.0.1:3000/site-test/navigation/page-d.html',
   'http://127.0.0.1:3000/site-test/navigation/page-e.html',
   'http://localhost:3000/site-test/erreurs-complements.html',
-  'http://127.0.0.1:3000/site-test/navigation/plan.html'
+  'http://127.0.0.1:3000/site-test/navigation/plan.html',
+  'http://localhost:3000/site-test/erreurs-consultation.html'
 ];
 
 if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
@@ -133,7 +134,10 @@ async function analyser(page, url, capture) {
 async function main() {
   const { sortie, capture } = lireArguments();
 
-  const navigateur = await firefox.launch();
+  // 4.10
+  const navigateur = await firefox.launch({
+    firefoxUserPrefs: { 'media.autoplay.default': 0, 'media.autoplay.blocking_policy': 0, 'media.volume_scale': '0.0' }
+  });
   const contexte = await navigateur.newContext();
   let page = await contexte.newPage();
 
@@ -141,6 +145,7 @@ async function main() {
   let totalErreurs = 0;
   let totalAnomalies = 0;
   let echecs = 0;
+  const raisons = {};
 
   try {
     for (const url of URLS) {
@@ -153,6 +158,7 @@ async function main() {
         console.error(`  Echec sur ${url} : ${erreur.message}`);
         resultats[url] = [];
         echecs += 1;
+        raisons[url] = erreur.message;
         await page.close().catch(() => {});
         page = await contexte.newPage();
       }
@@ -166,6 +172,7 @@ async function main() {
     passes: Object.values(resultats).filter((a) => !a.some((x) => x.type === 'error')).length - echecs,
     errors: totalErreurs,
     navigateur: 'firefox',
+    echecs: raisons,
     results: resultats
   };
 

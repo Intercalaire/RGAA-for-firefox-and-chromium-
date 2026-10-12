@@ -119,11 +119,13 @@ async function main() {
 
   const puppeteer = await chargerPuppeteer();
   const navigateur = await puppeteer.launch({
-    args: ['--no-sandbox', '--disable-dev-shm-usage']
+    // 4.10
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--autoplay-policy=no-user-gesture-required', '--mute-audio']
   });
 
   const rapport = lireRapport();
   rapport.results = rapport.results || {};
+  rapport.echecs = {};
   let ajouts = 0;
   let erreursAjoutees = 0;
   let echecs = 0;
@@ -166,6 +168,7 @@ async function main() {
       } catch (erreur) {
         console.error(` > ${url} - echec : ${erreur.message}`);
         echecs += 1;
+        rapport.echecs[url] = erreur.message;
         const cle = cleDuRapport(rapport, url);
         if (erreur.pageInvalide && cle) {
           erreursRetirees += rapport.results[cle].filter((a) => a.type === 'error').length;
