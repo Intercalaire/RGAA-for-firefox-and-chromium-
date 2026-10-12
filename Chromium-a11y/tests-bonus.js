@@ -962,8 +962,23 @@ function pageTestsComposants() {
   const champs = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"])'
     + ':not([type="color"]):not([type="file"]):not([type="image"]):not([type="submit"])'
     + ':not([type="button"]):not([type="reset"]), select, textarea';
+  // Cas particulier 3.3 : apparence geree par les styles natifs du navigateur, sans
+  // modification par l'auteur. Temoin du meme type sans les styles de l'auteur.
+  const natif = (el) => {
+    const temoin = document.createElement(el.tagName);
+    if (el.getAttribute('type')) temoin.setAttribute('type', el.getAttribute('type'));
+    temoin.style.setProperty('all', 'revert', 'important');
+    el.parentElement.appendChild(temoin);
+    const a = getComputedStyle(el);
+    const b = getComputedStyle(temoin);
+    const memes = ['Top', 'Right', 'Bottom', 'Left'].every((c) => ['Style', 'Width', 'Color']
+      .every((p) => a['border' + c + p] === b['border' + c + p]))
+      && a.backgroundColor === b.backgroundColor && a.boxShadow === b.boxShadow;
+    temoin.remove();
+    return memes;
+  };
   document.querySelectorAll(champs).forEach((el) => {
-    if (masque(el) || el.disabled || !el.parentElement) return;
+    if (masque(el) || el.disabled || !el.parentElement || natif(el)) return;
     const autour = C.fond(el.parentElement);
     if (!autour) return;
     const s = getComputedStyle(el);
@@ -1722,7 +1737,8 @@ function pageNavigation() {
     .filter((n) => !/fil d|ariane|breadcrumb|pagination|evitement|évitement|skip|acces rapide|accès rapide/
       .test(norm([n.getAttribute('aria-label'), n.className, n.id].join(' '))))
     .filter((n) => n.querySelectorAll('a[href]').length >= 3)
-    .map((n) => ({ liens: Array.from(n.querySelectorAll('a[href]')).map(chemin), place: place(n), el: n }));
+    .map((n) => ({ liens: Array.from(n.querySelectorAll('a[href]')).map(chemin),
+      textes: Array.from(n.querySelectorAll('a[href]')).map((a) => norm(a.textContent)).filter(Boolean), place: place(n), el: n }));
   const PLAN = /plan du site|plan de site|sitemap/;
   const plan = Array.from(document.querySelectorAll('a[href]')).find((a) => PLAN.test(intitule(a)));
   const champ = 'input[type="search"], input[name="q"], input[name="s"], input[name="search"], input[name="recherche"], input[name="query"]';
@@ -1736,11 +1752,12 @@ function pageNavigation() {
     .filter(([, el]) => el);
   elements.sort(([, a], [, b]) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   return {
-    menus: menus.map((m) => ({ liens: m.liens, place: m.place, ...decrire(m.el) })),
+    menus: menus.map((m) => ({ liens: m.liens, textes: m.textes, place: m.place, ...decrire(m.el) })),
     plan: plan ? { texte: norm(plan.textContent), cible: chemin(plan), place: place(plan), ...decrire(plan) } : null,
     recherche: recherche ? { type: recherche.matches('a, button, [role="button"]') ? 'bouton' : 'formulaire',
       texte: recherche.matches('a, button, [role="button"]') ? intitule(recherche) : '', place: place(recherche), ...decrire(recherche) } : null,
-    ordre: elements.map(([nom]) => nom)
+    ordre: elements.map(([nom]) => nom),
+    titre: (document.title || '').replace(/\s+/g, ' ').trim()
   };
 }
 
@@ -1757,11 +1774,27 @@ async function testerNavigation(page) {
   const signaler = (code, message, cible) => anomalies.push(versFormatPa11y({
     code, type: 'warning', message, selector: cible ? cible.selecteur : 'body', context: cible ? cible.contexte : '<body>'
   }));
+  // Menus compares par leurs intitules de liens (part d'intitules communs).
+  const ressemblance = (a, b) => {
+    const tous = new Set([...a, ...b]);
+    return tous.size ? a.filter((t) => b.includes(t)).length / tous.size : 0;
+  };
   const decalage = (a, b) => a && b && (a.zone !== b.zone || Math.abs(a.x - b.x) > ECART_PLACE || Math.abs(a.y - b.y) > ECART_PLACE);
   // Ordre relatif : l'element est-il toujours avant (ou apres) chacun des autres ?
   const ordreDifferent = (ref, nom) => ref.ordre.includes(nom) && n.ordre.includes(nom)
     && ref.ordre.filter((x) => x !== nom && n.ordre.includes(x))
       .some((x) => (ref.ordre.indexOf(nom) < ref.ordre.indexOf(x)) !== (n.ordre.indexOf(nom) < n.ordre.indexOf(x)));
+
+  // 8.6 : titre de page generique, ou identique a celui d'une autre page du site.
+  const titre = n.titre.toLowerCase();
+  const GENERIQUE = /^(accueil|home|page|sans titre|untitled|document|nouvelle page|index|titre|test|welcome|bienvenue|page d'accueil)$/;
+  site.titres = site.titres || {};
+  const chemin = adresse.pathname.replace(/(\/index)?\.html?$/, '').replace(/\/$/, '') + adresse.search;
+  if (titre && (GENERIQUE.test(titre) || titre === adresse.hostname || /\.(html?|php|aspx?)$/.test(titre))) {
+    signaler('kit-titre-page', 'Titre de page generique (« ' + n.titre + ' ») : il doit identifier le contenu de la page');
+  } else if (titre && site.titres[titre] && site.titres[titre] !== chemin) {
+    signaler('kit-titre-page', 'Titre de page identique a celui de ' + site.titres[titre] + ' (« ' + n.titre + ' ») : chaque page doit avoir un titre unique');
+  } else if (titre && !site.titres[titre]) site.titres[titre] = chemin;
 
   // 12.1 : evalue sur la premiere page testee du site, en general l'accueil.
   const presents = [n.menus.length && 'menu de navigation', n.plan && 'plan du site', n.recherche && 'moteur de recherche'].filter(Boolean);
@@ -1777,10 +1810,8 @@ async function testerNavigation(page) {
     if (!site.menu) site.menu = { ...n.menus[0], ordre: n.ordre, url: page.url() };
     else {
       const ref = site.menu;
-      const proches = n.menus.map((m) => {
-        const communs = m.liens.filter((l) => ref.liens.includes(l)).length;
-        return { m, score: communs / new Set([...m.liens, ...ref.liens]).size };
-      }).sort((a, b) => b.score - a.score);
+      const proches = n.menus.map((m) => ({ m, score: ressemblance(m.textes, ref.textes) }))
+        .sort((a, b) => b.score - a.score);
       const meme = proches[0] && proches[0].score >= 0.5 ? proches[0].m : null;
       if (meme && decalage(meme.place, ref.place)) {
         signaler('kit-menu-place', 'Menu de navigation pas a la meme place que sur ' + ref.url, meme);
@@ -1792,11 +1823,8 @@ async function testerNavigation(page) {
 
   // 12.4 et 12.5 : seulement entre pages qui partagent le meme menu principal
   // (meme ensemble de pages ; une page de processus ou isolee n'est pas comparee).
-  if (!site.menuEnsemble && n.menus.length) site.menuEnsemble = n.menus[0].liens;
-  const memeEnsemble = !site.menuEnsemble || n.menus.some((m) => {
-    const communs = m.liens.filter((l) => site.menuEnsemble.includes(l)).length;
-    return communs / new Set([...m.liens, ...site.menuEnsemble]).size >= 0.5;
-  });
+  if (!site.menuEnsemble && n.menus.length) site.menuEnsemble = n.menus[0].textes;
+  const memeEnsemble = !site.menuEnsemble || n.menus.some((m) => ressemblance(m.textes, site.menuEnsemble) >= 0.5);
   if (memeEnsemble) [['plan', 'kit-plan-site', 'Lien vers le plan du site'], ['recherche', 'kit-moteur-recherche', 'Moteur de recherche']]
     .forEach(([nom, code, libelle]) => {
       const ici = n[nom];
@@ -1811,6 +1839,239 @@ async function testerNavigation(page) {
       } else if (decalage(ici.place, ref.place)) signaler(code, libelle + ' pas a la meme place que sur ' + ref.url, ici);
       else if (ordreDifferent(ref, nom)) signaler(code, libelle + ' pas dans le meme ordre du code source que sur ' + ref.url, ici);
     });
+  return anomalies;
+}
+
+// 10.9, 3.1, 11.10.5, 10.14
+function pageTestsComplements() {
+  const anomalies = [];
+  const ajouter = (code, type, message, el) => anomalies.push({
+    code, type, message, selector: window.__kitSelecteur(el), context: el.outerHTML.slice(0, 250)
+  });
+  const masque = (el) => el.closest('[aria-hidden="true"]') || el.getClientRects().length === 0
+    || getComputedStyle(el).visibility === 'hidden';
+  const texte = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  const mot = (liste) => '(?<![\\p{L}])(?:' + liste + ')(?![\\p{L}])';
+
+  // 10.9 et 3.1 : consignes qui renvoient a la forme, la position ou la couleur.
+  const POSITION = 'à droite|à gauche|en haut|en bas|ci-dessus|ci-dessous|plus haut|plus bas|de droite|de gauche|du haut|du bas';
+  const FORME = 'rond|ronde|ronds|rondes|carré|carrée|carrés|triangulaire|en forme de';
+  const COULEUR = 'rouge|rouges|vert|verte|verts|vertes|bleu|bleue|bleus|orange|jaune|jaunes|gris|grise|violet';
+  const ACTION = 'cliquez|cliquer|appuyez|appuyer|sélectionnez|touchez|utilisez|consultez';
+  const OBJET = 'bouton|boutons|lien|liens|icône|icônes|icone|pictogramme|pictogrammes|case|cases|onglet|onglets|flèche|champ|champs|zone|encadré|élément|éléments|mot|mots|ligne|lignes';
+  const regles = [
+    ['kit-forme-position', new RegExp(mot(ACTION) + '[^.!?]{0,50}?' + mot(POSITION + '|' + FORME), 'iu')],
+    ['kit-forme-position', new RegExp(mot(OBJET) + '[^.!?]{0,30}?' + mot(POSITION + '|' + FORME), 'iu')],
+    ['kit-couleur-texte', new RegExp(mot(OBJET + '|' + ACTION) + '[^.!?]{0,30}?' + mot('en (?:' + COULEUR + ')|de couleur (?:' + COULEUR + ')|(?:' + COULEUR + ')'), 'iu')]
+  ];
+  const vus = { 'kit-forme-position': 0, 'kit-couleur-texte': 0 };
+  document.querySelectorAll('p, li, td, th, dd, dt, label, legend, caption, figcaption, span, div, strong, em').forEach((el) => {
+    if (masque(el) || el.closest('script, style, noscript, svg')) return;
+    const propre = texte(Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' '));
+    if (propre.length < 12) return;
+    for (const [code, motif] of regles) {
+      const trouve = motif.exec(propre);
+      if (!trouve || vus[code] >= 5) continue;
+      vus[code] += 1;
+      ajouter(code, 'warning', code === 'kit-couleur-texte'
+        ? 'Consigne qui semble reposer sur la couleur seule (« ' + trouve[0] + ' ») : verifier qu\'une autre indication existe'
+        : 'Consigne qui semble reposer sur la forme ou la position (« ' + trouve[0] + ' ») : verifier qu\'une autre indication existe', el);
+      break;
+    }
+  });
+
+  // 11.10.5 : champ a format impose sans indication visible du format.
+  const INDICATION = /format|exemple|ex\s?[.:]|jj|mm\/|aaaa|\d+\s*(chiffres|caract)|@|\d{2}[/.\- ]\d{2}/i;
+  const DATE = /(?<![\p{L}])(date|naissance)(?![\p{L}])/iu;
+  const parIds = (v) => (v || '').split(/\s+/).map((id) => id && document.getElementById(id)).filter(Boolean)
+    .map((e) => e.textContent).join(' ');
+  let formats = 0;
+  document.querySelectorAll('input:not([type]), input[type="text"], input[type="tel"], input[type="email"], input[type="number"], input[type="search"]')
+    .forEach((champ) => {
+      if (masque(champ) || champ.disabled || formats >= 10) return;
+      const etiquette = texte([...(champ.labels || [])].map((l) => l.textContent).join(' ') + ' '
+        + parIds(champ.getAttribute('aria-labelledby')) + ' ' + (champ.getAttribute('aria-label') || ''));
+      const impose = champ.hasAttribute('pattern') || ((champ.type === 'text' || !champ.getAttribute('type')) && DATE.test(etiquette + ' ' + champ.name + ' ' + champ.id));
+      if (!impose) return;
+      if (INDICATION.test(etiquette + ' ' + parIds(champ.getAttribute('aria-describedby')))) return;
+      formats += 1;
+      ajouter('kit-format-saisie', 'warning', 'Champ a format impose sans indication visible du format (dans l\'etiquette ou un texte lie par aria-describedby)'
+        + (INDICATION.test(champ.placeholder || '') ? ' : le placeholder seul ne suffit pas, il disparait a la saisie' : ''), champ);
+    });
+
+  // 10.14 : contenu revele au survol par CSS, sans equivalent au focus.
+  const regleCss = [];
+  const parcourir = (liste) => {
+    for (const r of liste) {
+      if (r.selectorText) regleCss.push(r);
+      else if (r.cssRules) parcourir(r.cssRules);
+    }
+  };
+  for (const feuille of document.styleSheets) {
+    try { parcourir(feuille.cssRules); } catch (e) { /* feuille d'un autre domaine : illisible */ }
+  }
+  const selecteurs = new Set(regleCss.flatMap((r) => r.selectorText.split(',').map((x) => x.trim())));
+  const revele = (style) => Array.from(style).some((p) => {
+    const v = style.getPropertyValue(p).trim();
+    if (p === 'display') return v !== 'none';
+    if (p === 'visibility') return v === 'visible';
+    if (p === 'opacity') return parseFloat(v) > 0;
+    if (p === 'max-height' || p === 'height') return v !== '0' && v !== '0px';
+    return p === 'clip' || p === 'clip-path' || p === 'content';
+  });
+  let survols = 0;
+  regleCss.forEach((r) => {
+    r.selectorText.split(',').map((x) => x.trim()).forEach((sel) => {
+      const i = sel.indexOf(':hover');
+      if (i < 0 || survols >= 5) return;
+      // Contenu additionnel : un autre element (descendant, voisin) ou un pseudo-element.
+      if (!/^(\s|>|\+|~|::?(before|after))/.test(sel.slice(i + 6)) || !revele(r.style)) return;
+      if ([':focus', ':focus-within', ':focus-visible'].some((f) => selecteurs.has(sel.replace(':hover', f)))) return;
+      let declencheur = null;
+      try { declencheur = document.querySelector(sel.slice(0, i) || '*'); } catch (e) { return; }
+      if (!declencheur || masque(declencheur)) return;
+      survols += 1;
+      ajouter('kit-survol-seul', 'warning', 'Contenu qui apparait au survol (' + sel.slice(0, 80) + ') sans regle equivalente au focus clavier : verifier qu\'il apparait aussi au clavier', declencheur);
+    });
+  });
+  return anomalies;
+}
+
+// 12.10 : raccourcis clavier a une seule touche, le focus etant sur la page.
+const TOUCHES_RACCOURCIS = ['/', '?', 's', 'f', 'j', 'k', 'n', 'g', 'h', 'm'];
+
+function pageRaccourci(action) {
+  if (action === 'installer') {
+    window.__kitMutations = 0;
+    if (!window.__kitObservateur) {
+      window.__kitObservateur = new MutationObserver((liste) => { window.__kitMutations += liste.length; });
+      window.__kitObservateur.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+    }
+    return true;
+  }
+  if (action === 'etat') {
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    window.__kitMutations = 0;
+    return { adresse: location.href, x: scrollX, y: scrollY };
+  }
+  if (action === 'nettoyer') {
+    if (window.__kitObservateur) window.__kitObservateur.disconnect();
+    window.__kitObservateur = null;
+    return true;
+  }
+  const actif = document.activeElement;
+  return { adresse: location.href, x: scrollX, y: scrollY, mutations: window.__kitMutations,
+    focus: actif && actif !== document.body ? window.__kitSelecteur(actif) : null,
+    contexte: actif && actif !== document.body ? actif.outerHTML.slice(0, 250) : null };
+}
+
+async function testerRaccourcis(page) {
+  const pause = (ms) => page.evaluate((d) => new Promise((r) => setTimeout(r, d)), ms);
+  const adresse = page.url();
+  const anomalies = [];
+  try {
+    await page.evaluate(pageRaccourci, 'installer');
+    await page.evaluate(pageRaccourci, 'etat');
+    await pause(400);
+    const calme = (await page.evaluate(pageRaccourci, 'apres')).mutations === 0;
+    for (const touche of TOUCHES_RACCOURCIS) {
+      const avant = await page.evaluate(pageRaccourci, 'etat');
+      await page.keyboard.press(touche);
+      await pause(150);
+      let apres;
+      try { apres = await page.evaluate(pageRaccourci, 'apres'); } catch (e) { apres = { adresse: 'navigation' }; }
+      const effets = [];
+      if (apres.adresse !== avant.adresse) effets.push('changement de page ou d\'adresse');
+      else {
+        if (apres.focus) effets.push('focus deplace');
+        if (apres.x !== avant.x || apres.y !== avant.y) effets.push('defilement');
+        if (calme && apres.mutations > 0) effets.push('contenu modifie');
+      }
+      if (effets.length) {
+        anomalies.push(versFormatPa11y({ code: 'kit-raccourci', type: 'warning',
+          message: 'La touche « ' + touche + ' » seule declenche une action (' + effets.join(', ') + ') : verifier que ce raccourci peut etre desactive, configure, ou qu\'il ne marche que sur son composant',
+          selector: apres.focus || 'html', context: apres.contexte || '<html>' }));
+        if (apres.adresse !== avant.adresse) {
+          await page.goto(adresse);
+          await page.evaluate(pagePreparer);
+          await page.evaluate(pageRaccourci, 'installer');
+        } else await page.keyboard.press('Escape');
+        if (anomalies.length >= 3) break;
+      }
+    }
+  } finally {
+    try { await page.evaluate(pageRaccourci, 'nettoyer'); } catch (e) { /* page changee */ }
+  }
+  return anomalies;
+}
+
+// 7.4 : une liste deroulante qui change de contexte des la selection d'une option.
+// L'envoi des formulaires est intercepte : il est detecte, mais bloque.
+function pageListe(action) {
+  if (action === 'candidats') {
+    const listes = Array.from(document.querySelectorAll('select:not([multiple]):not([disabled])'))
+      .filter((s) => s.options.length >= 2 && s.getClientRects().length > 0).slice(0, 5);
+    listes.forEach((s, i) => s.setAttribute('data-kit-liste', String(i)));
+    if (!window.__kitEnvois) {
+      window.__kitEnvois = 0;
+      document.addEventListener('submit', (e) => { window.__kitEnvois += 1; e.preventDefault(); }, true);
+      HTMLFormElement.prototype.submit = function () { window.__kitEnvois += 1; };
+      HTMLFormElement.prototype.requestSubmit = function () { window.__kitEnvois += 1; };
+    }
+    return listes.length;
+  }
+  if (action === 'nettoyer') {
+    document.querySelectorAll('[data-kit-liste]').forEach((s) => s.removeAttribute('data-kit-liste'));
+    return true;
+  }
+  const liste = document.querySelector('[data-kit-liste="' + action.id + '"]');
+  if (!liste) return null;
+  if (action.etape === 'changer') {
+    liste.focus();
+    window.__kitEnvois = 0;
+    const avant = liste.selectedIndex;
+    liste.selectedIndex = avant === 0 ? 1 : 0;
+    liste.dispatchEvent(new Event('input', { bubbles: true }));
+    liste.dispatchEvent(new Event('change', { bubbles: true }));
+    return { avant, adresse: location.href };
+  }
+  const resultat = { adresse: location.href, envoi: window.__kitEnvois > 0,
+    focus: document.activeElement !== liste && document.activeElement !== document.body,
+    selecteur: window.__kitSelecteur(liste), contexte: liste.outerHTML.slice(0, 250) };
+  liste.selectedIndex = action.avant;
+  return resultat;
+}
+
+async function testerListesDeroulantes(page) {
+  const adresse = page.url();
+  const anomalies = [];
+  const nombre = await page.evaluate(pageListe, 'candidats');
+  for (let id = 0; id < nombre; id++) {
+    let changement;
+    try { changement = await page.evaluate(pageListe, { id, etape: 'changer' }); } catch (e) { break; }
+    if (!changement) continue;
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 500))).catch(() => {});
+    const fenetres = await fenetresOuvertes(page);
+    let r;
+    try { r = await page.evaluate(pageListe, { id, etape: 'verifier', avant: changement.avant }); } catch (e) { r = null; }
+    const effets = [];
+    if (!r || r.adresse !== changement.adresse) effets.push('changement de page');
+    if (r && r.envoi) effets.push('envoi du formulaire');
+    if (fenetres.length) effets.push('nouvelle fenetre');
+    if (r && r.focus) effets.push('focus deplace');
+    if (effets.length) {
+      anomalies.push(versFormatPa11y({ code: 'kit-changement-contexte', type: 'warning',
+        message: 'Choisir une option de cette liste declenche un changement de contexte (' + effets.join(', ')
+          + ') sans bouton : verifier qu\'un texte previent l\'utilisateur avant',
+        selector: r ? r.selecteur : 'select', context: r ? r.contexte : '<select>' }));
+    }
+    if (!r || r.adresse !== changement.adresse) {
+      await page.goto(adresse);
+      await page.evaluate(pagePreparer);
+      break;
+    }
+  }
+  try { await page.evaluate(pageListe, 'nettoyer'); } catch (e) { /* page changee */ }
   return anomalies;
 }
 
@@ -1837,10 +2098,13 @@ async function executerTestsBonus(page) {
   const reflow = await testerReflow(page);
   const espacement = await testerEspacement(page);
   const audit = await page.evaluate(pageTestsAudit);
+  const complements = await page.evaluate(pageTestsComplements);
   const motifs = await page.evaluate(pageTestsMotifs);
   const motifsClavier = await testerMotifsClavier(page);
-  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...motifs].map(versFormatPa11y),
-    ...clavier, ...contrastes, ...reflow, ...espacement, ...motifsClavier];
+  const raccourcis = await testerRaccourcis(page);
+  const listes = await testerListesDeroulantes(page);
+  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...motifs].map(versFormatPa11y),
+    ...clavier, ...contrastes, ...reflow, ...espacement, ...motifsClavier, ...raccourcis, ...listes];
 }
 
 module.exports = {
@@ -1848,7 +2112,7 @@ module.exports = {
   requalifierAnomalies,
   // Exportes pour les tests du kit lui-meme.
   _interne: {
-    pagePreparer, pageNavigation, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs, pageTestsAudit,
+    pagePreparer, pageNavigation, pageEtatFocus, pageTestsStatiques, pageTestsImages, pageTestsStructure, pageTestsComposants, pageTestsMotifs, pageTestsAudit, pageTestsComplements,
     pageTestReflow, pageCandidatsContraste, parcourirAuClavier, testerContrasteSurImage, testerReflow, lirePng,
     LIENS_VAGUES, ALTS_SUSPECTS
   }

@@ -50,6 +50,7 @@
     { "url": "http://127.0.0.1:3000/site-test/navigation/page-b" },
     { "url": "http://127.0.0.1:3000/site-test/navigation/page-c" },
     { "url": "http://127.0.0.1:3000/site-test/navigation/page-d" },
-    { "url": "http://127.0.0.1:3000/site-test/navigation/page-e" }
+    { "url": "http://127.0.0.1:3000/site-test/navigation/page-e" },
+	{ "url": "http://localhost:3000/site-test/erreurs-complements" }
   ]
 }
