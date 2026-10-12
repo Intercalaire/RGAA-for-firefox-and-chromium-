@@ -2075,6 +2075,64 @@ async function testerListesDeroulantes(page) {
   return anomalies;
 }
 
+// 10.4 : zoom graphique du navigateur a 200 % (largeur divisee par deux), sans texte coupe.
+async function testerZoom(page) {
+  const taille = (page.viewportSize ? page.viewportSize() : page.viewport()) || { width: 1280, height: 1024 };
+  const avant = await page.evaluate(pageTexteCoupe, 'avant');
+  await changerLargeur(page, { width: Math.round(taille.width / 2), height: Math.round(taille.height / 2) });
+  let apres;
+  try {
+    apres = await page.evaluate(pageTexteCoupe, 'apres');
+  } finally {
+    await changerLargeur(page, taille);
+  }
+  return apres.filter((c) => !avant[c.id]).slice(0, 10).map((c) => versFormatPa11y({
+    code: 'kit-zoom-200',
+    type: 'error',
+    message: 'Texte coupe quand la page est agrandie a 200 % (zoom du navigateur, ' + Math.round(taille.width / 2) + ' px de large)',
+    selector: c.selecteur,
+    context: c.contexte
+  }));
+}
+
+// 12.3.2 : sur la page « plan du site », chaque lien interne doit aboutir.
+// 401, 403 et 429 (pages protegees ou limitees) ne sont pas comptes comme casses.
+async function pagePlanDuSite() {
+  const PLAN = /plan du site|plan de site|sitemap/i;
+  const h1 = document.querySelector('h1');
+  if (!PLAN.test(document.title) && !(h1 && PLAN.test(h1.textContent))) return [];
+  const zone = document.querySelector('main, [role="main"]') || document.body;
+  const vus = new Set();
+  const liens = Array.from(zone.querySelectorAll('a[href]')).filter((a) => {
+    let u;
+    try { u = new URL(a.getAttribute('href'), location.href); } catch (e) { return false; }
+    if (u.origin !== location.origin || !/^https?:$/.test(u.protocol)) return false;
+    u.hash = '';
+    if (u.href === location.href.split('#')[0] || vus.has(u.href)) return false;
+    vus.add(u.href);
+    a.__kitCible = u.href;
+    return true;
+  }).slice(0, 150);
+  const anomalies = [];
+  const verifier = async (a) => {
+    let statut;
+    try {
+      let r = await fetch(a.__kitCible, { method: 'HEAD', redirect: 'follow', credentials: 'same-origin' });
+      if (r.status === 405 || r.status === 501) r = await fetch(a.__kitCible, { redirect: 'follow', credentials: 'same-origin' });
+      statut = r.status;
+    } catch (e) {
+      statut = 'injoignable';
+    }
+    if (statut === 'injoignable' || statut === 404 || statut === 410 || statut >= 500) {
+      anomalies.push({ code: 'kit-plan-lien-casse', type: 'error',
+        message: 'Lien du plan du site qui n\'aboutit pas (' + statut + ') : ' + a.__kitCible,
+        selector: window.__kitSelecteur(a), context: a.outerHTML.slice(0, 250) });
+    }
+  };
+  for (let i = 0; i < liens.length; i += 6) await Promise.all(liens.slice(i, i + 6).map(verifier));
+  return anomalies;
+}
+
 async function executerTestsBonus(page) {
   await attendreAntiRobot(page);
   const fenetres = (await fenetresOuvertes(page)).map((adresse) => versFormatPa11y({
@@ -2097,14 +2155,16 @@ async function executerTestsBonus(page) {
   const contrastes = await testerContrasteSurImage(page);
   const reflow = await testerReflow(page);
   const espacement = await testerEspacement(page);
+  const zoom = await testerZoom(page);
+  const planDuSite = await page.evaluate(pagePlanDuSite);
   const audit = await page.evaluate(pageTestsAudit);
   const complements = await page.evaluate(pageTestsComplements);
   const motifs = await page.evaluate(pageTestsMotifs);
   const motifsClavier = await testerMotifsClavier(page);
   const raccourcis = await testerRaccourcis(page);
   const listes = await testerListesDeroulantes(page);
-  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...motifs].map(versFormatPa11y),
-    ...clavier, ...contrastes, ...reflow, ...espacement, ...motifsClavier, ...raccourcis, ...listes];
+  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...planDuSite, ...motifs].map(versFormatPa11y),
+    ...clavier, ...contrastes, ...reflow, ...espacement, ...zoom, ...motifsClavier, ...raccourcis, ...listes];
 }
 
 module.exports = {

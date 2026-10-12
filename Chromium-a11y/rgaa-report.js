@@ -222,6 +222,8 @@ const AXE_VERS_RGAA = {
   'kit-survol-seul': '10.14',
   'kit-raccourci': '12.10',
   'kit-changement-contexte': '7.4',
+  'kit-zoom-200': '10.4',
+  'kit-plan-lien-casse': '12.3',
   'kit-espacement': '10.12',
 
   // 13. Consultation

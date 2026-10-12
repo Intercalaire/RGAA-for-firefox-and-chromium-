@@ -45,7 +45,8 @@ const URLS = [
   'http://127.0.0.1:3000/site-test/navigation/page-c.html',
   'http://127.0.0.1:3000/site-test/navigation/page-d.html',
   'http://127.0.0.1:3000/site-test/navigation/page-e.html',
-  'http://localhost:3000/site-test/erreurs-complements.html'
+  'http://localhost:3000/site-test/erreurs-complements.html',
+  'http://127.0.0.1:3000/site-test/navigation/plan.html'
 ];
 
 if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
