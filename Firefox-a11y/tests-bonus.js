@@ -2106,6 +2106,273 @@ function pageTestsComplements() {
   return anomalies;
 }
 
+// 10.5 et 8.9
+function pagePresentation() {
+  const anomalies = [];
+  const ajouter = (code, type, message, el) => anomalies.push({
+    code, type, message, selector: window.__kitSelecteur(el), context: el.outerHTML.slice(0, 250)
+  });
+  const visible = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+    && !el.closest('[aria-hidden="true"]');
+  const lire = window.__kitCouleurs.lire;
+
+  // Couleurs par defaut du navigateur, mesurees dans un document vierge.
+  const cadre = document.createElement('iframe');
+  cadre.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
+  document.documentElement.appendChild(cadre);
+  const vierge = cadre.contentDocument;
+  const defauts = {};
+  const defaut = (el) => {
+    const cle = el.tagName + (el.tagName === 'A' && el.hasAttribute('href') ? ':lien' : '');
+    if (!defauts[cle]) {
+      const t = vierge.createElement(el.tagName.toLowerCase());
+      if (cle.endsWith(':lien')) t.setAttribute('href', '#');
+      vierge.body.appendChild(t);
+      const st = cadre.contentWindow.getComputedStyle(t);
+      defauts[cle] = { color: st.color, fond: st.backgroundColor };
+    }
+    return defauts[cle];
+  };
+  // Element ou la couleur du texte change : couleur declaree par le site si elle differe de celle du navigateur.
+  const couleurDeclaree = (el) => {
+    for (let e = el; e; e = e.parentElement) {
+      const c = getComputedStyle(e).color;
+      if (!e.parentElement || c !== getComputedStyle(e.parentElement).color) {
+        return c !== defaut(e).color ? e : null;
+      }
+    }
+    return null;
+  };
+  const fondDe = (e) => {
+    const st = getComputedStyle(e);
+    const c = lire(st.backgroundColor);
+    return { couleur: c && c[3] > 0, image: /url\(/.test(st.backgroundImage), auteur: c && c[3] > 0 && st.backgroundColor !== defaut(e).fond };
+  };
+  // Regles CSS lisibles qui declarent color (feuilles d'un autre domaine illisibles : null = inconnu).
+  let illisible = false;
+  const regles = [];
+  const parcourir = (liste) => {
+    for (const r of liste) {
+      if (r.selectorText && r.style && r.style.color) regles.push(r.selectorText);
+      else if (r.cssRules && !(r.media && !matchMedia(r.media.mediaText).matches)) parcourir(r.cssRules);
+    }
+  };
+  for (const f of document.styleSheets) { try { parcourir(f.cssRules); } catch (e) { illisible = true; } }
+  const colorDansCss = (el) => {
+    for (let e = el; e; e = e.parentElement) {
+      if (e.style && e.style.color) return true;
+      if (regles.some((sel) => { try { return e.matches(sel); } catch (x) { return false; } })) return true;
+    }
+    return illisible ? null : false;
+  };
+
+  const vus = new Set();
+  const compte = { 1: 0, 2: 0, 3: 0 };
+  const marcheur = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = marcheur.nextNode(); n; n = marcheur.nextNode()) {
+    const el = n.parentElement;
+    if (!n.textContent.trim() || !el || el.closest('script, style, noscript, template, svg, iframe, select, option') || !visible(el)) continue;
+    let fondCouleur = null;
+    let fondImage = null;
+    for (let e = el; e; e = e.parentElement) {
+      const f = fondDe(e);
+      if (f.image && !fondImage && !fondCouleur) fondImage = e;
+      if (f.couleur) { fondCouleur = e; break; }
+    }
+    const declaree = couleurDeclaree(el);
+    // 10.5.1
+    if (declaree && !fondCouleur && !vus.has(declaree) && compte[1] < 5) {
+      vus.add(declaree); compte[1] += 1;
+      ajouter('kit-couleurs-css', 'error', 'Couleur de texte declaree (' + getComputedStyle(declaree).color + ') sans couleur de fond declaree, ni sur l\'element ni sur ses parents', declaree);
+    }
+    // 10.5.3
+    if (fondImage && !fondCouleur && !vus.has(fondImage) && compte[3] < 5) {
+      vus.add(fondImage); compte[3] += 1;
+      ajouter('kit-couleurs-css', 'error', 'Image de fond sous du texte sans couleur de fond declaree en secours, ni sur l\'element ni sur ses parents', fondImage);
+    }
+    // 10.5.2
+    if (fondCouleur && fondDe(fondCouleur).auteur && !declaree && !vus.has(fondCouleur) && compte[2] < 5) {
+      if (colorDansCss(el) === false) {
+        vus.add(fondCouleur); compte[2] += 1;
+        ajouter('kit-couleurs-css', 'error', 'Couleur de fond declaree (' + getComputedStyle(fondCouleur).backgroundColor + ') sans couleur de texte declaree, ni sur l\'element ni sur ses parents', fondCouleur);
+      }
+    }
+  }
+  cadre.remove();
+
+  // 8.9 : plusieurs <br> a la suite pour simuler des paragraphes.
+  const blocs = new Set();
+  document.querySelectorAll('br + br').forEach((br) => {
+    let entre = br.previousSibling;
+    while (entre && entre.nodeType === 3 && !entre.textContent.trim()) entre = entre.previousSibling;
+    if (!entre || entre.nodeName !== 'BR') return;
+    const bloc = br.parentElement;
+    if (!bloc || blocs.has(bloc) || !visible(bloc) || bloc.closest('address, pre, [contenteditable]')) return;
+    const avant = br.previousElementSibling && br.previousElementSibling.previousSibling;
+    if (!bloc.textContent.trim() || !avant) return;
+    blocs.add(bloc);
+    if (blocs.size <= 5) ajouter('kit-presentation', 'error', 'Paragraphes simules avec plusieurs balises <br> a la suite au lieu de balises <p>', bloc);
+  });
+  // 8.9 : paragraphes vides servant d'espacement.
+  let vides = 0;
+  document.querySelectorAll('p').forEach((p) => {
+    if (p.textContent.replace(/[\s ]/g, '') || p.querySelector('img, svg, input, select, textarea, button, iframe, video, audio, canvas, object')) return;
+    if (!visible(p) || p.getBoundingClientRect().height < 4 || vides >= 5) return;
+    vides += 1;
+    ajouter('kit-presentation', 'warning', 'Paragraphe vide qui sert d\'espacement : utiliser les marges CSS', p);
+  });
+  // 8.9 : blockquote employe pour mettre en retrait un contenu qui n'est pas une citation.
+  document.querySelectorAll('blockquote').forEach((q) => {
+    if (!visible(q) || q.getAttribute('role') === 'presentation') return;
+    if (q.querySelector('h1, h2, h3, h4, h5, h6, form, nav, table, input, select, button')) {
+      ajouter('kit-presentation', 'warning', 'Balise <blockquote> contenant des titres, formulaires ou tableaux : verifier qu\'il s\'agit d\'une citation et non d\'un retrait', q);
+    }
+  });
+  return anomalies;
+}
+
+// 10.13 : contenu additionnel au survol ou au focus, survolable et masquable par Echap.
+const MAX_DECLENCHEURS = 40;
+
+function pageContenus(arg) {
+  const [action, id] = Array.isArray(arg) ? arg : [arg];
+  const visible = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+    && parseFloat(getComputedStyle(el).opacity) > 0;
+  if (action === 'preparer') {
+    let n = 0;
+    document.querySelectorAll('body *').forEach((el) => {
+      if (n >= 400 || el.closest('script, style, noscript, template, dialog, [role="dialog"], [aria-modal="true"]')) return;
+      if (!el.textContent.trim() || visible(el)) return;
+      el.setAttribute('data-kit-cache', String(n++));
+    });
+    const declencheurs = Array.from(document.querySelectorAll('a[href], button, [tabindex]:not([tabindex="-1"]), input:not([type="hidden"]), [aria-describedby], [data-tooltip]'))
+      .filter((el) => visible(el) && !el.closest('[data-kit-cache]'));
+    const prioritaires = declencheurs.filter((el) => el.matches('[aria-describedby], [data-tooltip], [aria-haspopup]')
+      || el.parentElement.querySelector('[data-kit-cache]'));
+    const choisis = [...new Set([...prioritaires, ...declencheurs])].slice(0, 40);
+    choisis.forEach((el, i) => {
+      el.setAttribute('data-kit-declencheur', String(i));
+      if (prioritaires.includes(el)) el.setAttribute('data-kit-prioritaire', '');
+    });
+    return choisis.length;
+  }
+  if (action === 'position') {
+    const el = document.querySelector('[data-kit-declencheur="' + id + '"]');
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, prioritaire: el.hasAttribute('data-kit-prioritaire') };
+  }
+  if (action === 'apparus') {
+    const apparus = Array.from(document.querySelectorAll('[data-kit-cache]')).filter(visible);
+    // Seulement le plus haut des elements apparus.
+    return apparus.filter((el) => !apparus.includes(el.parentElement.closest('[data-kit-cache]')))
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        const st = getComputedStyle(el);
+        // Recouvre-t-il un autre texte (fenetre flottante) ou pousse-t-il le contenu ?
+        const flottant = /absolute|fixed/.test(st.position);
+        let masque = false;
+        if (flottant) {
+          for (const [px, py] of [[0.5, 0.5], [0.2, 0.5], [0.8, 0.5]]) {
+            const pile = document.elementsFromPoint(r.left + r.width * px, r.top + r.height * py);
+            const dessous = pile.find((x) => !el.contains(x) && x !== el && Array.from(x.childNodes).some((c) => c.nodeType === 3 && c.textContent.trim()));
+            if (dessous) { masque = true; break; }
+          }
+        }
+        return { id: el.getAttribute('data-kit-cache'), x: r.left + r.width / 2, y: r.top + r.height / 2, masque,
+          selecteur: window.__kitSelecteur(el), contexte: el.outerHTML.slice(0, 250) };
+      });
+  }
+  if (action === 'visible') {
+    const el = document.querySelector('[data-kit-cache="' + id + '"]');
+    return !!el && visible(el);
+  }
+  if (action === 'focus') {
+    const el = document.querySelector('[data-kit-declencheur="' + id + '"]');
+    if (el) el.focus();
+    return document.activeElement === el;
+  }
+  if (action === 'quitter') {
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    return true;
+  }
+  if (action === 'nettoyer') {
+    document.querySelectorAll('[data-kit-cache], [data-kit-declencheur]').forEach((el) => {
+      el.removeAttribute('data-kit-cache');
+      el.removeAttribute('data-kit-declencheur');
+      el.removeAttribute('data-kit-prioritaire');
+    });
+  }
+  return null;
+}
+
+async function testerContenusAdditionnels(page) {
+  const anomalies = [];
+  const pause = (ms) => page.evaluate((d) => new Promise((r) => setTimeout(r, d)), ms);
+  const loin = async () => { await page.mouse.move(1, 1); await page.evaluate(pageContenus, 'quitter'); await pause(150); };
+  const vus = new Set();
+  const signaler = (c, type, message) => {
+    if (vus.has(c.selecteur + type)) return;
+    vus.add(c.selecteur + type);
+    anomalies.push(versFormatPa11y({ code: 'kit-contenu-survol', type, message, selector: c.selecteur, context: c.contexte }));
+  };
+  try {
+    const nombre = await page.evaluate(pageContenus, 'preparer');
+    for (let i = 0; i < Math.min(nombre, MAX_DECLENCHEURS) && anomalies.length < 10; i++) {
+      await loin();
+      const p = await page.evaluate(pageContenus, ['position', i]);
+      if (!p) continue;
+      await page.mouse.move(p.x, p.y);
+      await pause(250);
+      let apparus = await page.evaluate(pageContenus, 'apparus');
+      let parSurvol = true;
+      if (apparus.length === 0) {
+        if (!p.prioritaire) continue;
+        await page.mouse.move(1, 1);
+        if (!(await page.evaluate(pageContenus, ['focus', i]))) continue;
+        await pause(250);
+        apparus = await page.evaluate(pageContenus, 'apparus');
+        parSurvol = false;
+      }
+      const montrer = async () => {
+        if (parSurvol) await page.mouse.move(p.x, p.y);
+        else await page.evaluate(pageContenus, ['focus', i]);
+        await pause(250);
+      };
+      for (const c of apparus.slice(0, 2)) {
+        // Contenu lie au declencheur : il disparait quand on s'eloigne (ecarte un carrousel, une animation...).
+        await loin();
+        if (await page.evaluate(pageContenus, ['visible', c.id])) continue;
+        await montrer();
+        if (!(await page.evaluate(pageContenus, ['visible', c.id]))) continue;
+        // 10.13.2 : le pointeur passe sur le contenu sans qu'il disparaisse.
+        if (parSurvol) {
+          await page.mouse.move(c.x, c.y, { steps: 5 });
+          await pause(250);
+          if (!(await page.evaluate(pageContenus, ['visible', c.id]))) {
+            signaler(c, 'error', 'Contenu qui apparait au survol et disparait quand le pointeur passe dessus');
+          }
+          await page.mouse.move(p.x, p.y);
+          await pause(250);
+          if (!(await page.evaluate(pageContenus, ['visible', c.id]))) continue;
+        }
+        // 10.13.1 : Echap masque le contenu, s'il recouvre un autre contenu.
+        if (!c.masque) continue;
+        await page.keyboard.press('Escape');
+        await pause(250);
+        if (await page.evaluate(pageContenus, ['visible', c.id])) {
+          signaler(c, 'error', 'Contenu qui apparait ' + (parSurvol ? 'au survol' : 'au focus') + ', recouvre la page et ne se masque pas avec la touche Echap');
+        }
+      }
+    }
+  } finally {
+    await loin().catch(() => {});
+    await page.evaluate(pageContenus, 'nettoyer').catch(() => {});
+  }
+  return anomalies;
+}
+
 // 12.10 : raccourcis clavier a une seule touche, le focus etant sur la page.
 const TOUCHES_RACCOURCIS = ['/', '?', 's', 'f', 'j', 'k', 'n', 'g', 'h', 'm'];
 
@@ -2122,6 +2389,24 @@ function pageRaccourci(action) {
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     window.__kitMutations = 0;
     return { adresse: location.href, x: scrollX, y: scrollY };
+  }
+  // Evenements clavier envoyes par le kit : seul le code du site y reagit, pas le navigateur
+  // (recherche rapide de Firefox avec « / », defilement...).
+  if (action && action.touche) {
+    const t = action.touche;
+    const majuscule = t === '?';
+    const codeTouche = /[a-z]/.test(t) ? t.toUpperCase().charCodeAt(0) : 191;
+    const cible = document.activeElement || document.body;
+    for (const type of ['keydown', 'keypress', 'keyup']) {
+      const e = new KeyboardEvent(type, { key: t, code: /[a-z]/.test(t) ? 'Key' + t.toUpperCase() : 'Slash',
+        shiftKey: majuscule, bubbles: true, cancelable: true, composed: true });
+      const code = type === 'keypress' ? t.charCodeAt(0) : codeTouche;
+      Object.defineProperty(e, 'keyCode', { get: () => code });
+      Object.defineProperty(e, 'which', { get: () => code });
+      if (type === 'keypress') Object.defineProperty(e, 'charCode', { get: () => code });
+      cible.dispatchEvent(e);
+    }
+    return true;
   }
   if (action === 'nettoyer') {
     if (window.__kitObservateur) window.__kitObservateur.disconnect();
@@ -2145,7 +2430,7 @@ async function testerRaccourcis(page) {
     const calme = (await page.evaluate(pageRaccourci, 'apres')).mutations === 0;
     for (const touche of TOUCHES_RACCOURCIS) {
       const avant = await page.evaluate(pageRaccourci, 'etat');
-      await page.keyboard.press(touche);
+      await page.evaluate(pageRaccourci, { touche });
       await pause(150);
       let apres;
       try { apres = await page.evaluate(pageRaccourci, 'apres'); } catch (e) { apres = { adresse: 'navigation' }; }
@@ -2399,12 +2684,14 @@ async function executerTestsBonus(page) {
   const planDuSite = await page.evaluate(pagePlanDuSite);
   const audit = await page.evaluate(pageTestsAudit);
   const complements = await page.evaluate(pageTestsComplements);
+  const presentation = await page.evaluate(pagePresentation);
   const motifs = await page.evaluate(pageTestsMotifs);
   const motifsClavier = await testerMotifsClavier(page);
   const raccourcis = await testerRaccourcis(page);
   const listes = await testerListesDeroulantes(page);
-  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...planDuSite, ...motifs].map(versFormatPa11y),
-    ...clavier, ...contrastes, ...reflow, ...espacement, ...zoom, ...orientation, ...motifsClavier, ...raccourcis, ...listes];
+  const contenus = await testerContenusAdditionnels(page);
+  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...presentation, ...planDuSite, ...motifs].map(versFormatPa11y),
+    ...clavier, ...contrastes, ...reflow, ...espacement, ...zoom, ...orientation, ...motifsClavier, ...raccourcis, ...listes, ...contenus];
 }
 
 module.exports = {
