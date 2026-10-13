@@ -54,6 +54,6 @@
 	{ "url": "http://localhost:3000/site-test/erreurs-complements" },
 	{ "url": "http://127.0.0.1:3000/site-test/navigation/plan" },
 	{ "url": "http://localhost:3000/site-test/erreurs-consultation" },
-	{ "url": "http://localhost:3000/site-test/erreurs-presentation" }
+	{ "url": "http://localhost:3000/site-test/erreurs-presentation "}
   ]
 }

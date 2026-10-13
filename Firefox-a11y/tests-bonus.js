@@ -2373,6 +2373,110 @@ async function testerContenusAdditionnels(page) {
   return anomalies;
 }
 
+// 4.1, 4.7, 8.7, 7.5 : points a verifier a la main.
+function pageTestsAVerifier() {
+  const anomalies = [];
+  const ajouter = (code, message, el) => anomalies.push({
+    code, type: 'warning', message, selector: window.__kitSelecteur(el), context: el.outerHTML.slice(0, 250)
+  });
+  const visible = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+    && !el.closest('[aria-hidden="true"]');
+  const texte = (t) => (t || '').replace(/\s+/g, ' ').trim();
+  const LIMITE = 'main, [role="main"], body, article, section';
+
+  // 4.1 et 4.7 : media temporel sans transcription reperable, ou sans texte qui l'identifie.
+  const LECTEURS = /youtube\.com|youtube-nocookie\.com|youtu\.be|vimeo\.com|dailymotion\.com|dai\.ly|soundcloud\.com|ausha\.co|acast\.com|spotify\.com\/embed|\/videos\/embed\//i;
+  const TRANSCRIPTION = /transcri|version texte|texte int[ée]gral|audiodescri|audio-descri|transcript|audio description/i;
+  const medias = [
+    ...Array.from(document.querySelectorAll('video, audio')).filter((m) => (m.getAttribute('src') || m.querySelector('source[src]'))
+      && !(m.autoplay && m.muted && m.loop && !m.controls)),
+    ...Array.from(document.querySelectorAll('iframe[src]')).filter((f) => LECTEURS.test(f.getAttribute('src')))
+  ].filter(visible);
+  medias.slice(0, 10).forEach((m) => {
+    const zones = [];
+    for (let p = m.parentElement, i = 0; p && i < 3; p = p.parentElement, i++) {
+      zones.push(p);
+      if (p.matches(LIMITE)) break;
+    }
+    // Voisins qui ne contiennent pas un autre media (sa transcription ou son titre ne comptent pas ici).
+    const autreMedia = (v) => v.matches('video, audio, iframe') || v.querySelector('video, audio, iframe');
+    const voisins = [m.previousElementSibling, m.nextElementSibling, zones[0] && zones[0].previousElementSibling,
+      zones[0] && zones[0].nextElementSibling, zones[1] && zones[1].nextElementSibling].filter((v) => v && !autreMedia(v));
+    const avant = [m.previousElementSibling, m.nextElementSibling, zones[0] && zones[0].previousElementSibling,
+      zones[0] && zones[0].nextElementSibling].filter((v, i) => v && !autreMedia(v) && !(i % 2 === 1 && /^H[1-6]$/.test(v.tagName)));
+    const lieu = [...zones.filter((z) => !z.matches(LIMITE)), ...voisins];
+    const transcription = lieu.some((z) => TRANSCRIPTION.test(z.textContent)
+      || Array.from(z.querySelectorAll('a[href], button, summary')).some((a) => TRANSCRIPTION.test(a.textContent + ' ' + (a.getAttribute('aria-label') || ''))))
+      || (m.matches('video') && m.querySelector('track[kind="descriptions"]'));
+    if (!transcription) {
+      ajouter('kit-media-transcription', 'Media sans transcription textuelle ni audiodescription reperee a proximite : verifier qu\'elle existe (lien ou texte adjacent)', m);
+    }
+    // 4.7 : texte adjacent qui identifie le media (un titre qui suit ouvre une autre partie).
+    const identifie = avant.some((v) => visible(v) && texte(v.textContent).length >= 8)
+      || zones.slice(0, 2).some((z) => !z.matches(LIMITE) && texte(Array.from(z.childNodes).filter((n) => n !== m && !(n.contains && n.contains(m)))
+        .map((n) => n.textContent).join(' ')).length >= 8);
+    if (!identifie) {
+      ajouter('kit-media-identifiable', 'Media sans texte adjacent qui permette de l\'identifier (titre, legende...) : a verifier', m);
+    }
+  });
+
+  // 8.7 : passage dans une autre langue que celle de la page, sans attribut lang.
+  const MOTS = {
+    fr: 'le les des du et est une pour dans qui sur avec pas vous nous aux cette sont mais très leur ces',
+    en: 'the and of with is are this that you your we our will can from have has was were which be by it its they their',
+    de: 'der die das und ist nicht mit für ein eine auf den dem zu von wir ich sie auch sich',
+    es: 'los las y con para por del es el lo su al muy pero como más esta este',
+    it: 'gli della delle degli sono per nel nella alla anche questo questa perché'
+  };
+  const listes = Object.fromEntries(Object.entries(MOTS).map(([l, m]) => [l, new Set(m.split(' '))]));
+  const langPage = (document.documentElement.getAttribute('lang') || '').toLowerCase().slice(0, 2);
+  if (listes[langPage]) {
+    let vus = 0;
+    document.querySelectorAll('p, li, blockquote, q, td, th, h1, h2, h3, h4, h5, h6, figcaption, dd, dt, label, button, a, span, em, strong, cite').forEach((el) => {
+      if (vus >= 5 || !visible(el) || el.closest('code, pre, script, style, svg, [translate="no"]')) return;
+      const propre = texte(Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' '));
+      const mots = propre.toLowerCase().match(/[\p{L}']+/gu) || [];
+      if (mots.length < 6) return;
+      const compte = (l) => mots.filter((w) => listes[l].has(w)).length;
+      const propres = compte(langPage);
+      let langue = null;
+      let meilleur = 0;
+      for (const l of Object.keys(listes)) {
+        if (l === langPage) continue;
+        const n = compte(l);
+        if (n > meilleur) { meilleur = n; langue = l; }
+      }
+      if (!langue || meilleur < 3 || meilleur / mots.length < 0.2 || propres > Math.max(1, mots.length * 0.05)) return;
+      const declaree = (el.closest('[lang]') || document.documentElement).getAttribute('lang').toLowerCase().slice(0, 2);
+      if (declaree !== langPage) return;
+      vus += 1;
+      ajouter('kit-changement-langue', 'Passage qui semble ecrit dans une autre langue (' + langue + ') sans attribut lang : verifier le changement de langue', el);
+    });
+  }
+
+  // 7.5 : zone qui ressemble a un message de statut, sans role ni aria-live.
+  const STATUT = /(^|[\s_-])(alert|alerte|message|messages|notification|notif|toast|snackbar|status|statut|feedback|flash|success|succes|confirmation)([\s_-]|$)/i;
+  const annonce = (el) => el.closest('[role="status"], [role="alert"], [role="log"], [role="progressbar"], [role="alertdialog"], [role="dialog"], output, [aria-live]:not([aria-live="off"])');
+  const decrits = new Set();
+  document.querySelectorAll('[aria-describedby], [aria-errormessage]').forEach((c) => {
+    [c.getAttribute('aria-describedby'), c.getAttribute('aria-errormessage')].join(' ').split(/\s+/)
+      .forEach((id) => { const d = id && document.getElementById(id); if (d) decrits.add(d); });
+  });
+  let statuts = 0;
+  document.querySelectorAll('[class], [id]').forEach((el) => {
+    if (statuts >= 5 || !visible(el) || !texte(el.textContent) || annonce(el)) return;
+    if (!STATUT.test(String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className) + ' ' + el.id)) return;
+    if (el.parentElement && el.parentElement.closest('[data-kit-statut]')) return;
+    if (decrits.has(el) || el.matches('a, button, input, select, textarea, label, nav, header, footer, main, form, html, body')) return;
+    if (texte(el.textContent).length > 300) return;
+    el.setAttribute('data-kit-statut', '');
+    statuts += 1;
+    ajouter('kit-message-statut', 'Zone qui ressemble a un message de statut (classe ou identifiant) sans role="status", role="alert" ni aria-live : verifier qu\'elle est annoncee', el);
+  });
+  document.querySelectorAll('[data-kit-statut]').forEach((el) => el.removeAttribute('data-kit-statut'));
+  return anomalies;
+}
+
 // 12.10 : raccourcis clavier a une seule touche, le focus etant sur la page.
 const TOUCHES_RACCOURCIS = ['/', '?', 's', 'f', 'j', 'k', 'n', 'g', 'h', 'm'];
 
@@ -2483,13 +2587,27 @@ function pageListe(action) {
   if (action.etape === 'changer') {
     liste.focus();
     window.__kitEnvois = 0;
+    window.__kitTextes = [];
+    if (window.__kitObsListe) window.__kitObsListe.disconnect();
+    window.__kitObsListe = new MutationObserver((mutations) => mutations.forEach((m) => {
+      const el = m.target.nodeType === 3 ? m.target.parentElement : m.target;
+      if (el && !el.contains(liste) && !liste.contains(el)) window.__kitTextes.push(el);
+    }));
+    window.__kitObsListe.observe(document.body, { subtree: true, childList: true, characterData: true });
     const avant = liste.selectedIndex;
     liste.selectedIndex = avant === 0 ? 1 : 0;
     liste.dispatchEvent(new Event('input', { bubbles: true }));
     liste.dispatchEvent(new Event('change', { bubbles: true }));
     return { avant, adresse: location.href };
   }
+  if (window.__kitObsListe) window.__kitObsListe.disconnect();
+  // 7.5 : texte modifie par le choix, hors zone annoncee aux lecteurs d'ecran.
+  const annonce = (el) => el.closest('[role="status"], [role="alert"], [role="log"], [role="progressbar"], output, [aria-live]:not([aria-live="off"])');
+  const modifie = (window.__kitTextes || []).filter((el) => el.isConnected && el.getClientRects().length > 0
+    && el.textContent.trim() && el.textContent.trim().length <= 200 && !annonce(el))
+    .sort((a, b) => a.textContent.length - b.textContent.length)[0];
   const resultat = { adresse: location.href, envoi: window.__kitEnvois > 0,
+    statut: modifie ? { selecteur: window.__kitSelecteur(modifie), contexte: modifie.outerHTML.slice(0, 250) } : null,
     focus: document.activeElement !== liste && document.activeElement !== document.body,
     selecteur: window.__kitSelecteur(liste), contexte: liste.outerHTML.slice(0, 250) };
   liste.selectedIndex = action.avant;
@@ -2513,6 +2631,11 @@ async function testerListesDeroulantes(page) {
     if (r && r.envoi) effets.push('envoi du formulaire');
     if (fenetres.length) effets.push('nouvelle fenetre');
     if (r && r.focus) effets.push('focus deplace');
+    if (!effets.length && r && r.statut) {
+      anomalies.push(versFormatPa11y({ code: 'kit-message-statut', type: 'warning',
+        message: 'Ce texte change quand on choisit une option dans une liste, sans role="status" ni aria-live : s\'il s\'agit d\'un message de statut, il doit etre annonce',
+        selector: r.statut.selecteur, context: r.statut.contexte }));
+    }
     if (effets.length) {
       anomalies.push(versFormatPa11y({ code: 'kit-changement-contexte', type: 'warning',
         message: 'Choisir une option de cette liste declenche un changement de contexte (' + effets.join(', ')
@@ -2685,12 +2808,13 @@ async function executerTestsBonus(page) {
   const audit = await page.evaluate(pageTestsAudit);
   const complements = await page.evaluate(pageTestsComplements);
   const presentation = await page.evaluate(pagePresentation);
+  const aVerifier = await page.evaluate(pageTestsAVerifier);
   const motifs = await page.evaluate(pageTestsMotifs);
   const motifsClavier = await testerMotifsClavier(page);
   const raccourcis = await testerRaccourcis(page);
   const listes = await testerListesDeroulantes(page);
   const contenus = await testerContenusAdditionnels(page);
-  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...presentation, ...planDuSite, ...motifs].map(versFormatPa11y),
+  return [...fenetres, ...navigation, ...[...statiques, ...images, ...structure, ...composants, ...audit, ...complements, ...presentation, ...aVerifier, ...planDuSite, ...motifs].map(versFormatPa11y),
     ...clavier, ...contrastes, ...reflow, ...espacement, ...zoom, ...orientation, ...motifsClavier, ...raccourcis, ...listes, ...contenus];
 }
 
