@@ -213,6 +213,8 @@ function pageTestsStatiques(listes) {
     if (!texte || !listes.liensVagues.includes(texte)) return;
     const titre = (a.getAttribute('title') || '').trim();
     if (titre.length > texte.length) return;
+    const titreSection = a.closest('h1, h2, h3, h4, h5, h6, [role="heading"]');
+    if (titreSection && titreSection.textContent.replace(/\s+/g, ' ').trim().toLowerCase() === a.textContent.replace(/\s+/g, ' ').trim().toLowerCase()) return;
     ajouter('kit-lien-vague', 'warning',
       'Intitule de lien non explicite hors contexte : "' + texte + '"', a);
   });
@@ -259,8 +261,15 @@ function pageTestsStatiques(listes) {
   const avantPrincipal = atteignables.filter((el) => !principal
     || (!principal.contains(el) && (principal.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING)));
   if (avantPrincipal.length > 0) {
-    const evitement = atteignables.slice(0, 3)
-      .find((el) => el.matches('a[href^="#"]') && el.getAttribute('href').length > 1);
+    const EVITEMENT = /contenu|content|principal|main|aller [àa]|acc[eè]s rapide|[ée]vitement|skip/i;
+    const versPrincipal = (el) => {
+      let cible;
+      try { cible = document.getElementById(decodeURIComponent(el.getAttribute('href').slice(1))); } catch (e) { cible = null; }
+      return cible && principal && (cible === principal || principal.contains(cible) || cible.contains(principal));
+    };
+    const evitement = atteignables.slice(0, 3).concat(avantPrincipal.slice(0, 10))
+      .find((el, i) => el.matches('a[href^="#"]') && el.getAttribute('href').length > 1
+        && (i < 3 || versPrincipal(el) || EVITEMENT.test(el.textContent + ' ' + (el.getAttribute('aria-label') || ''))));
     if (!evitement) {
       ajouter('kit-lien-evitement', 'error',
         "Aucun lien d'evitement vers le contenu principal parmi les premiers elements atteints avec Tab",
@@ -395,7 +404,10 @@ function pageTestsImages(listes) {
   document.querySelectorAll('figure').forEach((figure) => {
     const legende = figure.querySelector('figcaption');
     if (!legende || masque(figure)) return;
-    if (!figure.querySelector('img, svg, [role="img"], canvas, object, embed')) return;
+    const images = Array.from(figure.querySelectorAll('img, svg, [role="img"], canvas, object, embed, input[type="image"]'))
+      .filter((i) => !i.closest('[aria-hidden="true"]') && !/^(presentation|none)$/.test(i.getAttribute('role') || '')
+        && !(i.tagName === 'IMG' && i.getAttribute('alt') === ''));
+    if (images.length === 0 || figure.querySelector('blockquote')) return;
     const problemes = [];
     const role = figure.getAttribute('role');
     if (role !== 'figure' && role !== 'group') problemes.push('role="figure" ou role="group" absent');
@@ -761,6 +773,9 @@ function pageTestsAudit() {
       if (masque(champ) || !champ.labels || champ.labels.length !== 1) return;
       const label = champ.labels[0];
       if (label.contains(champ) || masque(label)) return;
+      const sl = getComputedStyle(label);
+      const lr = label.getBoundingClientRect();
+      if (lr.width <= 2 || lr.height <= 2 || /rect\(0/.test(sl.clip) || sl.clipPath !== 'none') return;
       const s = getComputedStyle(champ);
       const r = champ.getBoundingClientRect();
       const l = label.getBoundingClientRect();
@@ -1419,10 +1434,38 @@ function pageTexteCoupe(etape) {
       el.setAttribute('data-kit-espacement', String(n++));
     });
   }
+  // Seul le texte visible qui sort de la boite compte : pas un texte reserve aux lecteurs d'ecran,
+  // ni un texte deja rogne par un element interieur (bouton icone...).
+  const texteDeborde = (el) => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    const g = r.left + parseFloat(s.borderLeftWidth);
+    const h = r.top + parseFloat(s.borderTopWidth);
+    const boite = { g, h, d: g + el.clientWidth, b: h + el.clientHeight };
+    const marcheur = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = marcheur.nextNode(); n; n = marcheur.nextNode()) {
+      if (!n.textContent.trim()) continue;
+      let cache = false;
+      for (let p = n.parentElement; p && p !== el; p = p.parentElement) {
+        const sp = getComputedStyle(p);
+        const rp = p.getBoundingClientRect();
+        if (sp.display === 'none' || sp.visibility === 'hidden' || rp.width <= 2 || rp.height <= 2
+          || /rect\(0/.test(sp.clip) || sp.clipPath !== 'none' || /hidden|clip/.test(sp.overflowX + sp.overflowY)) { cache = true; break; }
+      }
+      if (cache) continue;
+      const plage = document.createRange();
+      plage.selectNodeContents(n);
+      for (const t of plage.getClientRects()) {
+        if (t.width === 0 || t.height === 0) continue;
+        if (t.right > boite.d + 2 || t.bottom > boite.b + 2 || t.left < boite.g - 2 || t.top < boite.h - 2) return true;
+      }
+    }
+    return false;
+  };
   const coupes = {};
   document.querySelectorAll('[data-kit-espacement]').forEach((el) => {
-    coupes[el.getAttribute('data-kit-espacement')] = el.scrollHeight > el.clientHeight + 2
-      || el.scrollWidth > el.clientWidth + 2;
+    coupes[el.getAttribute('data-kit-espacement')] = (el.scrollHeight > el.clientHeight + 2
+      || el.scrollWidth > el.clientWidth + 2) && texteDeborde(el);
   });
   if (etape === 'apres') {
     const resultat = Object.keys(coupes).filter((id) => coupes[id]).map((id) => {
@@ -1537,6 +1580,8 @@ function pageRequalifier(liste) {
         const ps = getComputedStyle(e, p);
         if (!ps.content || ps.content === 'none' || ps.content === 'normal' || ps.display === 'none') continue;
         if (!/absolute|fixed/.test(ps.position)) continue;
+        // Icone dessinee par un masque (mask-image) : elle ne peint que sa forme, ce n'est pas un voile.
+        if ((ps.maskImage && ps.maskImage !== 'none') || (ps.webkitMaskImage && ps.webkitMaskImage !== 'none')) continue;
         porteurs.push(e);
         if (ps.visibility === 'hidden' || parseFloat(ps.opacity) === 0) continue;
         const boite = boitePseudo(e, ps);
@@ -1545,6 +1590,10 @@ function pageRequalifier(liste) {
         if (ps.backgroundImage !== 'none') { imagesDessous = true; continue; }
         const c = K.lire(ps.backgroundColor);
         if (!c) return { bloque: 'couleur illisible' };
+        // Trait ou souligne (4 px au plus), ou decor de la couleur du texte (currentColor) : pas un fond.
+        if (boite && (boite.right - boite.left <= 4 || boite.bottom - boite.top <= 4)) continue;
+        const ct = K.lire(getComputedStyle(el).color);
+        if (ct && c[3] > 0 && Math.abs(c[0] - ct[0]) + Math.abs(c[1] - ct[1]) + Math.abs(c[2] - ct[2]) < 6) continue;
         if (c[3] > 0) {
           voiles.push(parseFloat(ps.opacity) < 1 ? [c[0], c[1], c[2], c[3] * parseFloat(ps.opacity)] : c);
           if (!boite) boitesInconnues = true;
@@ -1561,8 +1610,28 @@ function pageRequalifier(liste) {
     const rang = pile.findIndex((x) => x === el || el.contains(x));
     if (rang < 0) return { bloque: 'texte recouvert par un autre element' };
     let voileDessus = false;
+    // Calque invisible (opacite nulle) ou temporaire (fenetre modale, bandeau fixe) : le contraste se juge sans lui.
+    const calque = (x) => {
+      for (let e = x; e && e !== document.body; e = e.parentElement) {
+        const se = getComputedStyle(e);
+        if (parseFloat(se.opacity) === 0 || se.position === 'fixed' || e.matches('dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]')) return true;
+      }
+      return false;
+    };
     for (const x of pile.slice(0, rang)) {
       if (porteurs.includes(x)) { voileDessus = true; continue; }
+      if (calque(x) && !calque(el)) continue;
+      // Element atteint par son pseudo-element (lien elargi a toute une carte...) : seul le pseudo-element compte.
+      const cx0 = t.left + t.width / 2;
+      const cy0 = t.top + t.height / 2;
+      if (!Array.from(x.getClientRects()).some((r) => cx0 >= r.left && cx0 <= r.right && cy0 >= r.top && cy0 <= r.bottom)) {
+        const peint = ['::before', '::after'].some((p) => {
+          const ps = getComputedStyle(x, p);
+          if (!ps.content || ps.content === 'none' || ps.content === 'normal' || ps.visibility === 'hidden' || parseFloat(ps.opacity) === 0) return false;
+          return ps.backgroundImage !== 'none' || (K.lire(ps.backgroundColor) || [0, 0, 0, 1])[3] > 0;
+        });
+        if (!peint) continue;
+      }
       const sx = getComputedStyle(x);
       const cx = K.lire(sx.backgroundColor);
       const pseudoPeint = ['::before', '::after'].some((p) => {
@@ -1747,7 +1816,12 @@ function cheminComparable(u) {
 async function verifierChargement(page, urlDemandee, reponse) {
   const statut = reponse && typeof reponse.status === 'function' ? reponse.status() : 0;
   const invalide = (message) => Object.assign(new Error(`${message} : page non analysee`), { pageInvalide: true });
-  if (statut >= 400) throw invalide(`la page repond ${statut}`);
+  if (statut >= 400) {
+    const robot = [403, 429, 503].includes(statut) && await page.evaluate(pageAntiRobot).catch(() => false);
+    if (!robot) throw invalide(`la page repond ${statut}`);
+    try { await attendreAntiRobot(page); } catch (e) { throw invalide(`page de verification anti-robot (reponse ${statut})`); }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
   const etat = await page.evaluate(pageChargement);
   if (TITRE_ERREUR.test(etat.titre) || TITRE_ERREUR.test(etat.h1)) throw invalide(`page d'erreur (« ${etat.titre || etat.h1} »)`);
   if (etat.vide) throw invalide('page vide');
@@ -1796,7 +1870,8 @@ function pageNavigation() {
     .map((n) => ({ liens: Array.from(n.querySelectorAll('a[href]')).map(chemin),
       textes: Array.from(n.querySelectorAll('a[href]')).map((a) => norm(a.textContent)).filter(Boolean), place: place(n), el: n }));
   const PLAN = /plan du site|plan de site|sitemap/;
-  const plan = Array.from(document.querySelectorAll('a[href]')).find((a) => PLAN.test(intitule(a)));
+  const liensPlan = Array.from(document.querySelectorAll('a[href]')).filter((a) => PLAN.test(intitule(a)));
+  const plan = liensPlan.find((a) => !a.closest('main, [role="main"]')) || liensPlan[0];
   const champ = 'input[type="search"], input[name="q"], input[name="s"], input[name="search"], input[name="recherche"], input[name="query"]';
   const recherche = document.querySelector('[role="search"], search')
     || Array.from(document.querySelectorAll('form')).find((f) => f.querySelector(champ) && !f.closest('main, [role="main"]'))
