@@ -6,11 +6,17 @@ accessibilite_firefox:
     - npx --yes wait-on http://localhost:3000 --timeout 60000
     - cd Firefox-a11y
     - npm ci
-    - npm run a11y
-  allow_failure: true
+    - node a11y-firefox.js || A11Y_STATUS=$?
+    - node rgaa-report.js a11y-report.json --json rgaa-summary.json --code || RGAA_STATUS=$?
+    # 1 = panne (page injoignable, page 404, Firefox absent...) : job rouge.
+    # 2 = anomalies dans le recapitulatif RGAA : job orange.
+    - if [ "${A11Y_STATUS:-0}" -eq 1 ]; then exit 1; fi
+    - exit ${RGAA_STATUS:-0}
+  allow_failure:
+    exit_codes: 2
   artifacts:
     when: always
-    expose_as: "Rapport accessibilite"
+    expose_as: "Rapport accessibilite Firefox"
     paths:
       - Firefox-a11y/a11y-report.json
       - Firefox-a11y/rgaa-summary.json

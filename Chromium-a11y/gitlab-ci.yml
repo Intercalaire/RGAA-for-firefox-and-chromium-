@@ -10,6 +10,7 @@
 
 accessibilite_chromium:
   stage: test
+  # Remplacer latest par la version utilisee (visible dans le journal du job) pour garder des resultats stables.
   image: registry.gitlab.com/gitlab-ci-utils/gitlab-pa11y-ci:latest
 
   variables:
@@ -23,12 +24,13 @@ accessibilite_chromium:
     - pa11y-ci --config pa11yci.json || PA11Y_STATUS=$?
     - node tests-bonus-chromium.js || BONUS_STATUS=$?
     - node rgaa-report.js pa11y-report.json --json rgaa-summary.json --code || RGAA_STATUS=$?
-    # 1 si pa11y-ci ou les tests bonus tombent en panne ; sinon le verdict du
-    # recapitulatif RGAA, une fois les resultats ecartes retires (comme make test).
+    # 1 = panne (page injoignable, page 404, Chrome absent...) : job rouge.
+    # 2 = anomalies dans le recapitulatif RGAA, une fois les resultats ecartes retires : job orange.
     - if [ "${PA11Y_STATUS:-0}" -ne 0 ] && [ "${PA11Y_STATUS:-0}" -ne 2 ]; then exit "$PA11Y_STATUS"; fi
     - if [ "${BONUS_STATUS:-0}" -eq 1 ]; then exit 1; fi
     - exit ${RGAA_STATUS:-0}
-  allow_failure: true
+  allow_failure:
+    exit_codes: 2
 
   artifacts:
     when: always
