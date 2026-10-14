@@ -46,6 +46,8 @@ Toutes les commandes se lancent depuis le dossier Chromium-a11y. Taper `make` se
 ```
     make installer
 ```
+`make installer` installe pa11y-ci 5.0.0 et pa11y-ci-reporter-html 8.1.1 : les mêmes versions que le CI (fichier gitlab-ci.yml) et que l'image du kit partagé, pour obtenir les mêmes résultats partout. Pour changer de version, modifier ces trois endroits ensemble.
+
 Ne pas lancer `sudo make installer` : Chrome serait alors installé pour root et pa11y ne le trouverait pas. Si `npm install -g` manque de droits (erreur EACCES), `make installer` recommence tout seul avec sudo et demande le mot de passe ; le message d'erreur qui s'affiche au passage est donc normal.
 
 La version de Chrome doit être celle qu'attend pa11y-ci : le Makefile la lit directement dans pa11y-ci. Après une mise à jour de pa11y-ci (erreur « Could not find Chrome (ver. ...) »), il suffit de lancer :

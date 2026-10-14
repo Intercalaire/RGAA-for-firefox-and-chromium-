@@ -10,14 +10,24 @@
 
 accessibilite_chromium:
   stage: test
-  # Remplacer latest par la version utilisee (visible dans le journal du job) pour garder des resultats stables.
-  image: registry.gitlab.com/gitlab-ci-utils/gitlab-pa11y-ci:latest
+  # Meme base que le kit Firefox ; pa11y-ci aux versions fixees dans le Makefile (make installer).
+  image: mcr.microsoft.com/playwright:v1.56.0-noble
 
   variables:
     DOSSIER_SERVI: "."
     PORT_TEST: "3000"
+    PA11Y_CI_VERSION: "5.0.0"
+    REPORTER_VERSION: "8.1.1"
 
   script:
+    - npm install -g "pa11y-ci@$PA11Y_CI_VERSION" "pa11y-ci-reporter-html@$REPORTER_VERSION"
+    # Chrome attendu par le Puppeteer de pa11y-ci (comme make chrome).
+    - |
+      R=$(npm root -g)
+      V=$(cat "$R"/pa11y-ci/node_modules/puppeteer-core/lib/*/revisions.js "$R"/pa11y-ci/node_modules/puppeteer-core/lib/*/puppeteer/revisions.js \
+        "$R"/puppeteer-core/lib/*/revisions.js "$R"/puppeteer-core/lib/*/puppeteer/revisions.js 2>/dev/null \
+        | sed -n "s/.*chrome: '\([0-9.]*\)'.*/\1/p" | head -1)
+      if [ -n "$V" ]; then npx --yes @puppeteer/browsers install "chrome@$V" --path ~/.cache/puppeteer; fi
     - npx --yes serve "$DOSSIER_SERVI" -l "$PORT_TEST" &
     - npx --yes wait-on "http://localhost:$PORT_TEST" --timeout 60000
     - cd Chromium-a11y

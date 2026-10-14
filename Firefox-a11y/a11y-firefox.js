@@ -27,7 +27,7 @@ const { executerTestsBonus, requalifierAnomalies, verifierChargement, avecDelai 
 /* Configuration                                                       */
 /* ------------------------------------------------------------------ */
 
-// Pages a tester. Le port doit correspondre a celui de "serve" (3000 par defaut).
+// Pages a tester. make test URL=... (variable A11Y_URL) les remplace le temps d'un test.
 const URLS = [
   'http://localhost:3000/site-test/page-correcte.html',
   'http://localhost:3000/site-test/erreurs-bonus.html',
@@ -48,14 +48,14 @@ const URLS = [
   'http://localhost:3000/site-test/erreurs-complements.html',
   'http://127.0.0.1:3000/site-test/navigation/plan.html',
   'http://localhost:3000/site-test/erreurs-consultation.html',
-  'http://localhost:3000/site-test/erreurs-presentation.html'
+  'http://localhost:3000/site-test/erreurs-presentation.html',
+  'http://localhost:3000/site-test/erreurs-a-verifier.html'
 ];
-
-if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
 
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
-const REGLES_IGNOREES = [];
+// Regles axe a ignorer : variable A11Y_IGNORE (identifiants separes par des espaces ou des virgules).
+const REGLES_IGNOREES = (process.env.A11Y_IGNORE || '').split(/[\s,]+/).filter(Boolean);
 
 const ATTENTE_MS = 2000;
 
@@ -134,6 +134,11 @@ async function analyser(page, url, capture) {
 
 async function main() {
   const { sortie, capture } = lireArguments();
+  if (process.env.A11Y_URL) URLS.splice(0, URLS.length, ...process.env.A11Y_URL.split(',').filter(Boolean));
+  if (URLS.length === 0) {
+    console.error('Aucune page a tester : renseignez A11Y_URL.');
+    process.exit(1);
+  }
 
   // 4.10
   const navigateur = await firefox.launch({

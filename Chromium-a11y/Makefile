@@ -17,6 +17,11 @@ CHROME_DETECTE = $(shell f=$$(readlink -f "$$(command -v pa11y-ci)" 2>/dev/null)
 	| sed -n "s/.*chrome: '\([0-9.]*\)'.*/\1/p" | head -1)
 CHROME_VERSION ?= $(or $(CHROME_DETECTE),155.0.8059.39)
 
+# Versions fixees, identiques a celles de l'image Chromium du CI (a11y-kit/chromium/Dockerfile).
+PA11Y_CI_VERSION ?= 5.0.0
+REPORTER_VERSION ?= 8.1.1
+OUTILS = pa11y-ci@$(PA11Y_CI_VERSION) pa11y-ci-reporter-html@$(REPORTER_VERSION)
+
 # Serveur local : sert la racine du projet (dossier parent) sur le port 3000.
 PORT    ?= 3000
 RACINE  ?= ..
@@ -66,8 +71,8 @@ aide:
 # Ne pas lancer avec sudo : Chrome serait installe dans /root au lieu de
 # votre dossier personnel. Le mot de passe est demande seulement pour npm -g.
 installer: pas-root
-	npm install -g pa11y-ci pa11y-ci-reporter-html \
-		|| { echo "Droits insuffisants : nouvel essai avec sudo"; sudo npm install -g pa11y-ci pa11y-ci-reporter-html; }
+	npm install -g $(OUTILS) \
+		|| { echo "Droits insuffisants : nouvel essai avec sudo"; sudo npm install -g $(OUTILS); }
 	$(MAKE) --no-print-directory chrome
 
 chrome: pas-root
